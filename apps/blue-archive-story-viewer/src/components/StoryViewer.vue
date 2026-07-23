@@ -150,7 +150,22 @@ import {
 const route = useRoute();
 const router = useRouter();
 const storyId = computed(() => route.params.id as string);
-const storyQueryType = computed(() => route.query.type ?? "main");
+const storyQueryType = computed<QueryType>(() => {
+  const queryType = route.query.type;
+  if (typeof queryType === "string") {
+    return queryType as QueryType;
+  }
+  switch (route.name) {
+    case "OtherStoryDetails":
+      return "other";
+    case "GroupStoryDetails":
+      return "group";
+    case "StudentStoryViewer":
+      return "favor";
+    default:
+      return "main";
+  }
+});
 const story = ref<StoryContent>({} as StoryContent);
 const storySummaryRaw = ref<Section | undefined>();
 

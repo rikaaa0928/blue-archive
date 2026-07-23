@@ -11,7 +11,11 @@
     "preview": "pnpm build:json && vite preview --host",
     "check": "eslint --fix ./src/ ./CICD/ ./public/config/yaml/ --ext .js,.ts,.vue,.yml,.yaml && vue-tsc --noEmit --skipLibCheck",
     "up": "taze major -I",
-    "create-story": "node ./CICD/create-story/create-favor.mjs"
+    "create-story": "node ./CICD/create-story/create-favor.mjs",
+    "import-ba-l10n-story": "node ./CICD/create-story/import-ba-l10n-story.mjs",
+    "enrich-story-llm": "node ./CICD/create-story/enrich-story-with-llm.mjs",
+    "voice-zero-tts": "node ./CICD/create-story/voice-zero-tts.mjs",
+    "publish-voice-r2": "node ./CICD/create-story/publish-voice-r2.mjs"
   },
   "dependencies": {
     "@vue/compiler-sfc": "^3.5.13",
@@ -39,6 +43,7 @@
     "globals": "^15.0.0"
   },
   "devDependencies": {
+    "@google/genai": "^1.0.0",
     "taze": "^18.1.0",
     "@babel/preset-env": "^7.26.0",
     "@csstools/css-parser-algorithms": "^3.0.3",

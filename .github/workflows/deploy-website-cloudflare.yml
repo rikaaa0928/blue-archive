@@ -1,0 +1,46 @@
+name: Deploy Website To Cloudflare
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+concurrency:
+  group: "cloudflare-pages-${{ github.ref_name }}"
+  cancel-in-progress: true
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@main
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@main
+        with:
+          node-version: 22
+
+      - uses: pnpm/action-setup@master
+        with:
+          version: 10.12.4
+
+      - name: Configure npmrc
+        run: cp common/config/rush/.npmrc.github common/config/rush/.npmrc
+
+      - name: Rush Install
+        run: node common/scripts/install-run-rush.js install
+
+      - name: Rush build
+        run: node common/scripts/install-run-rush.js build --to blue-archive-story-viewer --verbose
+
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: >
+            pages deploy ./apps/blue-archive-story-viewer/dist
+            --project-name=${{ secrets.CLOUDFLARE_PAGES_PROJECT_NAME }}
+            --branch=${{ vars.CLOUDFLARE_PAGES_BRANCH || 'main' }}

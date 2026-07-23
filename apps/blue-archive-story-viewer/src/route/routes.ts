@@ -166,23 +166,33 @@ const routes: Array<RouteRecordRaw> = [
       //   },
       //   component: () => import('../components/MiniStoryHome.vue'),
       // },
-      // {
-      //   path: '/groupStory',
-      //   name: 'GroupStory',
-      //   meta: {
-      //     shouldShowInNav: true,
-      //     navOrder: 4,
-      //     m17n: [
-      //       { lang: 'cn', title: '社团剧情' },
-      //       { lang: 'tw', title: '社團劇情' },
-      //       { lang: 'jp', title: 'グループストーリー' },
-      //       { lang: 'en', title: 'Sub Story' },
-      //       { lang: 'kr', title: '그룹 스토리' },
-      //       { lang: 'th', title: 'เรื่องกลุ่ม' },
-      //     ],
-      //   },
-      //   component: () => import('../components/GroupStoryHome.vue'),
-      // },
+      {
+        path: "/groupStory",
+        name: "GroupStory",
+        meta: {
+          shouldShowInNav: true,
+          navOrder: 4,
+          m17n: [
+            { lang: "cn", title: "社团剧情" },
+            { lang: "tw", title: "社團劇情" },
+            { lang: "jp", title: "グループストーリー" },
+            { lang: "en", title: "Sub Story" },
+            { lang: "kr", title: "그룹 스토리" },
+            { lang: "th", title: "เรื่องกลุ่ม" },
+          ],
+        },
+        component: () => import("../components/GroupStoryHome.vue"),
+        children: [
+          {
+            path: ":id",
+            name: "GroupStoryDetails",
+            meta: {
+              shouldShowInNav: false,
+            },
+            component: () => import("../components/StoryViewer.vue"),
+          },
+        ],
+      },
       {
         path: "/library",
         name: "Library",

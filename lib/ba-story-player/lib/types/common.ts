@@ -146,6 +146,7 @@ export interface StoryRawUnit {
   ScriptKr: string;
   TextJp: string;
   TextCn?: string;
+  TextJpVoice?: string;
   TextTw?: string;
   TextEn?: string;
   VoiceJp: string;

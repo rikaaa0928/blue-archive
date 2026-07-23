@@ -1,20 +1,9 @@
-name: Deploy Website To Preview Environment
+name: Deploy Toolbox To Production
 on:
-  push:
-    branches:
-      - dev
-      - "dev/**"
-      - "feat/**"
-      - "res/**"
-      - "resource/**"
-      - "resources/**"
-      - "translation/**"
-    paths:
-      - "apps/blue-archive-story-viewer/**"
-      - "lib/**"
+  workflow_dispatch:
 
 concurrency:
-  group: "preview-deploy"
+  group: "toolbox-deploy"
   cancel-in-progress: true
 
 jobs:
@@ -53,14 +42,14 @@ jobs:
           with open("./apps/ba-online-toolbox/src/tools/public/secrets.json", "w") as f:
               f.write(f'{{"YOUDAO_APP_ID": "{YOUDAO_APP_ID}", "YOUDAO_APP_SECRET": "{YOUDAO_APP_SECRET}", "ANTHROPIC_TIER1_SECRET": "{ANTHROPIC_TIER1_SECRET}"}}')
       - name: Rush build
-        run: node common/scripts/install-run-rush.js build --to blue-archive-story-viewer --verbose
-      - name: Viewer rsync deploy
+        run: node common/scripts/install-run-rush.js build --verbose --impacted-by-except blue-archive-story-viewer --to ba-online-toolbox
+      - name: Toolbox rsync deploy
         uses: easingthemes/ssh-deploy@main
         with:
           SSH_PRIVATE_KEY: ${{ secrets.SERVER_PASS_PRODUCTION }}
           ARGS: "-rltgoDzvO -i --delete"
-          SOURCE: "./apps/blue-archive-story-viewer/dist/"
+          SOURCE: "./apps/ba-online-toolbox/dist/"
           REMOTE_HOST: ${{ secrets.SERVER_HOST_PRODUCTION }}
           REMOTE_USER: ${{ secrets.SERVER_USER_PRODUCTION }}
-          TARGET: "/var/www/website-preview"
+          TARGET: "/var/www/toolbox"
           EXCLUDE: ".git*"

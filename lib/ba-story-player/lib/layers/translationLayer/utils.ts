@@ -421,6 +421,9 @@ type NxTagParseResult = {
 
 export function getVoiceJPUrl(VoiceJp: string) {
   if (VoiceJp) {
+    if (/^(https?:)?\/\//i.test(VoiceJp) || VoiceJp.startsWith("/")) {
+      return VoiceJp;
+    }
     return getResourcesUrl("voiceJp", VoiceJp);
   }
 }

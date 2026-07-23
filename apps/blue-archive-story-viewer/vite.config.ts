@@ -1,4 +1,4 @@
-/* eslint-disable no-unused-vars,@typescript-eslint/no-unused-vars,@typescript-eslint/ban-ts-comment */
+/* eslint-disable @typescript-eslint/no-unused-vars */
 import chalk from "chalk";
 import dayjs from "dayjs";
 import fs from "fs";
@@ -6,7 +6,7 @@ import path from "path";
 import px2rem from "postcss-plugin-px2rem";
 import postcssPresetEnv from "postcss-preset-env";
 import { visualizer } from "rollup-plugin-visualizer";
-import { defineConfig } from "vite";
+import { defineConfig, type Plugin } from "vite";
 import viteCompression from "vite-plugin-compression";
 import { VitePWA } from "vite-plugin-pwa";
 import legacy from "@vitejs/plugin-legacy";
@@ -23,6 +23,75 @@ const version = {
   build: dayjs().tz("Asia/Shanghai").format("YYYYMMDDHHmmss"),
   timezone: "Asia/Shanghai",
 };
+const localFileServicePrefix = "/api/local-files/";
+const localFileServiceRoot = path.resolve(
+  process.env.BA_LOCAL_FILE_ROOT || path.resolve(__dirname, ".local-files")
+);
+const localFileMimeTypes: Record<string, string> = {
+  ".aac": "audio/aac",
+  ".flac": "audio/flac",
+  ".json": "application/json; charset=utf-8",
+  ".m4a": "audio/mp4",
+  ".mp3": "audio/mpeg",
+  ".ogg": "audio/ogg",
+  ".opus": "audio/ogg",
+  ".txt": "text/plain; charset=utf-8",
+  ".wav": "audio/wav",
+};
+
+function localFileServicePlugin(): Plugin {
+  return {
+    name: "ba-local-file-service",
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        if (!req.url?.startsWith(localFileServicePrefix)) {
+          next();
+          return;
+        }
+
+        if (req.method !== "GET" && req.method !== "HEAD") {
+          res.statusCode = 405;
+          res.setHeader("Allow", "GET, HEAD");
+          res.end("Method Not Allowed");
+          return;
+        }
+
+        const rawRelativePath = req.url
+          .slice(localFileServicePrefix.length)
+          .split("?")[0];
+        const relativePath = decodeURIComponent(rawRelativePath);
+        const filePath = path.resolve(localFileServiceRoot, relativePath);
+        const relativeToRoot = path.relative(localFileServiceRoot, filePath);
+
+        if (relativeToRoot.startsWith("..") || path.isAbsolute(relativeToRoot)) {
+          res.statusCode = 403;
+          res.end("Forbidden");
+          return;
+        }
+
+        if (!fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
+          res.statusCode = 404;
+          res.end("Not Found");
+          return;
+        }
+
+        const stat = fs.statSync(filePath);
+        const ext = path.extname(filePath).toLowerCase();
+        res.statusCode = 200;
+        res.setHeader("Content-Type", localFileMimeTypes[ext] || "application/octet-stream");
+        res.setHeader("Content-Length", String(stat.size));
+        res.setHeader("Cache-Control", "no-store");
+
+        if (req.method === "HEAD") {
+          res.end();
+          return;
+        }
+
+        fs.createReadStream(filePath).pipe(res);
+      });
+    },
+  };
+}
 
 console.log(
   chalk.yellowBright(`Build version: ${version.build} (${version.timezone})`)
@@ -78,6 +147,7 @@ export default defineConfig({
     },
   },
   plugins: [
+    localFileServicePlugin(),
     vue(),
     legacy({
       targets: [

@@ -1,9 +1,6 @@
 name: Deploy Website To Production
 on:
-  push:
-    branches:
-      - master
-      - main
+  workflow_dispatch:
 
 concurrency:
   group: "production-deploy"
