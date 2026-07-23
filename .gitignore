@@ -80,3 +80,7 @@ components.d.ts
 apps/viewer-next/packages/eden-design/docs/.vitepress/cache/
 apps/viewer-next/packages/eden-design/docs/.vitepress/dist/
 
+# Local tooling and deployment state
+.pnpm-store/
+.wrangler/
+LOCAL_RUNBOOK.md
