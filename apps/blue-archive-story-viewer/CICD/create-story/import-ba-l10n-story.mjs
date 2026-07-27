@@ -10,6 +10,10 @@ const defaultBaseUrl = "https://ba-l10n.cnfast.top";
 const defaultSourceKind = "normal";
 const supportedFlatStoryTypes = new Set(["main", "other"]);
 const supportedNestedStoryTypes = new Set(["favor", "event", "group", "mini"]);
+const sourceScriptPrefixes = new Map([
+  // ba-l10n omits the clear before Hina interrupts the three visible speakers.
+  ["1101:72", "#all;hide"],
+]);
 
 function printUsage() {
   console.log(`Usage:
@@ -223,7 +227,7 @@ async function requestText(requestUrl) {
   });
 }
 
-function convertBaL10nStory(sourceRows, { groupId }) {
+function convertBaL10nStory(sourceRows, { groupId, sourceStoryId }) {
   if (!Array.isArray(sourceRows)) {
     throw new Error("ba-l10n source json must be an array");
   }
@@ -254,7 +258,7 @@ function convertBaL10nStory(sourceRows, { groupId }) {
       continue;
     }
 
-    const unit = convertStoryRow(row, groupId, state);
+    const unit = convertStoryRow(row, groupId, state, sourceStoryId);
     if (!unit.ScriptKr && !unit.TextJp && !unit.PopupFileName) {
       stats.skippedRows++;
       continue;
@@ -287,6 +291,10 @@ function convertCommandRow(row, groupId, state, stats) {
         createRawUnit(groupId, {
           SelectionGroup: selectionGroup,
           BGName: bgName,
+          // A ba-l10n bg command starts a new scene and implicitly clears
+          // characters. Preserve that behavior for ba-story-player, whose
+          // story format requires an explicit hide command.
+          ScriptKr: "#all;hide",
         }),
       ];
     }
@@ -351,9 +359,11 @@ function convertCommandRow(row, groupId, state, stats) {
   }
 }
 
-function convertStoryRow(row, groupId, state) {
+function convertStoryRow(row, groupId, state, sourceStoryId) {
   const bgName = numberOrZero(row.BGName);
   const bgmId = numberOrZero(row.BGMId);
+  const script = normalizeScript(row.Script);
+  const scriptPrefix = sourceScriptPrefixes.get(`${sourceStoryId}:${row.ActualPos}`);
 
   const unit = createRawUnit(groupId, {
     SelectionGroup: numberOrZero(row.SelectionGroup),
@@ -363,7 +373,10 @@ function convertStoryRow(row, groupId, state) {
     BGName: bgName && bgName !== state.bgName ? bgName : 0,
     BGEffect: numberOrZero(row.BGEffect),
     PopupFileName: stringOrEmpty(row.PopupFileName),
-    ScriptKr: normalizeScript(row.Script),
+    ScriptKr:
+      scriptPrefix && !script.includes(scriptPrefix)
+        ? `${scriptPrefix}\n${script}`
+        : script,
     TextJp: sanitizeMessage(row.Message?.j_ja),
   });
 
@@ -478,7 +491,10 @@ async function main() {
   );
   const outputPath = buildOutputPath(args, outId);
   const sourceRows = await loadSourceJson(args, sourceUrl);
-  const { story, stats } = convertBaL10nStory(sourceRows, { groupId });
+  const { story, stats } = convertBaL10nStory(sourceRows, {
+    groupId,
+    sourceStoryId: storyId,
+  });
 
   const summary = {
     source: args.input ? path.resolve(process.cwd(), args.input) : sourceUrl,

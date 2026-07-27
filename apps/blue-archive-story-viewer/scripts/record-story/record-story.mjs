@@ -56,17 +56,17 @@ async function main() {
       useMp3: false,
       initWithFullscreen: false
     }));
-    
+
     // 播放器内部使用 "volume" 这个 key 单独存储音量
     localStorage.setItem('volume', JSON.stringify({
       masterVolume: 1,
-      bgmVolume: 0.15, // 降低BGM音量，原默认是 0.3
-      sfxVolume: 0.75,
+      bgmVolume: 0.3,
+      sfxVolume: 0.9,
       voiceVolume: 1
     }));
   });
 
-  const videoStartTime = Date.now(); 
+  const videoStartTime = Date.now();
 
   const page = await context.newPage();
 
