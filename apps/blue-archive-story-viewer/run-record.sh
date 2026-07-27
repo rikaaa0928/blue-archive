@@ -50,9 +50,8 @@ TRIMMED_VIDEO="videos/${VIDEO_NAME}_trimmed.webm"
 
 if [ -f "$FINAL_VIDEO" ]; then
   echo "Generating trimmed video (cutting first 1.5 seconds)..."
-  # 视频前面截掉 1.5s，保留剧情刚开始正片画面。因为用 -c:v copy 可能遇到关键帧不准的情况，
-  # 为了首帧精准和避免播放器兼容性问题，我们将重新编码剪切。
-  ffmpeg -y -ss 1.5 -i "$FINAL_VIDEO" -c:v libx264 -c:a copy "$TRIMMED_VIDEO" > /dev/null 2>&1
+  # WebM (VP8/Opus) 在使用 -c copy 时完全支持直接秒切，我们不用重新耗时编码
+  ffmpeg -y -ss 1.5 -i "$FINAL_VIDEO" -c:v copy -c:a copy "$TRIMMED_VIDEO" > /dev/null 2>&1
   echo "✅ Trimmed video successfully saved to: $PROJECT_DIR/scripts/record-story/$TRIMMED_VIDEO"
 fi
 
