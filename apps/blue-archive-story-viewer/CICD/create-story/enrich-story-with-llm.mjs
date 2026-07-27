@@ -149,6 +149,7 @@ Rules:
   relevant phrase, not only at the beginning.
 - Calm one-sentence dialogue can use 0-1 tag. Do not tag every phrase.
 - TextJpVoice must only contain spoken dialogue, emotion tags, and basic punctuation.
+- Remove ALL decorative symbols that are not pronounced (e.g., "☆", "★", "♪", "♡", "♥", "！？？", "～") from TextJpVoice. Keep only standard grammatical punctuation (e.g., "。", "、", "！", "？", "……").
 - Remove non-spoken sound effects, actions, or parentheses like "（ズルッ）", "（ドサッッッ！！！）", or "（ガチャッ）" from TextJpVoice.
 - If a line contains NO spoken dialogue (e.g., only sound effects or actions), set TextJpVoice to an empty string "".
 - Return strict JSON only. No markdown.`;
@@ -624,11 +625,11 @@ function validateBatchResponse(parsed, batch) {
     if (typeof item.TextCn !== "string" || typeof item.TextJpVoice !== "string") {
       throw new Error(`Invalid item payload for index ${item.index}`);
     }
-    if (!item.TextCn.trim()) {
+    if (item.TextCn === undefined || item.TextCn === null || item.TextCn === "") {
       throw new Error(`Empty TextCn for index ${item.index}`);
     }
-    if (!item.TextJpVoice.trim()) {
-      throw new Error(`Empty TextJpVoice for index ${item.index}`);
+    if (item.TextJpVoice === undefined || item.TextJpVoice === null) {
+      throw new Error(`Missing TextJpVoice for index ${item.index}`);
     }
     validateTerminology(item, batch);
   }

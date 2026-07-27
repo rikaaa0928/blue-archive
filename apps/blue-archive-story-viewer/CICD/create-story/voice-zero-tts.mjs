@@ -699,6 +699,25 @@ async function uploadReference(args, reference) {
     return reference;
   }
 
+  // 先检查服务器上是否已经有同样名字的语音，避免重复上传
+  try {
+    const listData = await apiRequest(args, "/voices");
+    if (listData && Array.isArray(listData.items)) {
+      const existingVoice = listData.items.find(v => v.name === `BA ${reference.characterName}`);
+      if (existingVoice) {
+        console.log(`Found existing voice on server: ${existingVoice.name} (referenceId=${existingVoice.referenceId})`);
+        return {
+          ...reference,
+          voiceId: existingVoice.voiceId || existingVoice.id,
+          referenceId: existingVoice.referenceId || existingVoice.id,
+          voiceStatus: existingVoice.status || "READY",
+        };
+      }
+    }
+  } catch (e) {
+    console.warn("Failed to check existing voices on server, will proceed to upload. Error:", e.message);
+  }
+
   const form = new FormData();
   const audioBytes = fs.readFileSync(reference.audioPath);
   const audioBlob = new Blob([audioBytes], { type: "audio/mpeg" });
