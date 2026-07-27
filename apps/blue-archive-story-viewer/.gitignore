@@ -36,3 +36,6 @@ public/script/quicklink.umd.js
 /public/image/ScenarioImage/
 /public/config/yaml/image/
 index.json
+
+# Record Story script temp outputs
+scripts/record-story/videos/

@@ -42,6 +42,7 @@ export type PlayerProps = {
   userName: string;
   storySummary: StorySummary;
   startFullScreen?: boolean;
+  recordMode?: boolean;
   useMp3?: boolean;
   useSuperSampling?: "2" | "4" | "" | boolean;
   /** 跳转至传入的 index */
@@ -54,6 +55,7 @@ export type PlayerProps = {
 
 const props = withDefaults(defineProps<PlayerProps>(), {
   startFullScreen: false,
+  recordMode: false,
   useMp3: false,
 });
 const storySummary = ref(props.storySummary);
@@ -347,7 +349,7 @@ onMounted(async () => {
 
 const { tabActivated, autoMode } = useUiState();
 
-autoMode.value = false;
+autoMode.value = props.recordMode || false;
 
 const visibility = useDocumentVisibility();
 
@@ -419,6 +421,7 @@ onDeactivated(() => {
           :style="{ transform: `scale(${pixiScale})` }"
         ></div>
         <BaUI
+          v-if="!props.recordMode"
           :height="playerHeight"
           :width="playerWidth"
           :story-summary="storySummary"

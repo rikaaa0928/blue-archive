@@ -39,6 +39,7 @@ PixiPlugin.registerPIXI(PIXI);
 gsap.registerPlugin(PixiPlugin);
 
 Howler.autoSuspend = false;
+globalThis.Howler = Howler;
 
 let playerStore = usePlayerStore();
 let privateState = initPrivateState();
@@ -171,7 +172,8 @@ export const eventEmitter = {
         } else {
           storyHandler.stopAuto();
         }
-      }
+      },
+      { immediate: true }
     );
     eventBus.on("skip", () => storyHandler.end());
     eventBus.on("playVoiceJPDone", async () => {
@@ -209,9 +211,9 @@ export const eventEmitter = {
     this.showPopup();
     this.playEffect();
     this.playL2d();
-    this.playAudio();
     this.clearSt();
     await this.transitionOut();
+    this.playAudio();
     this.showCharacter();
     this.show();
 

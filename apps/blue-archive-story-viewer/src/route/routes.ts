@@ -281,6 +281,11 @@ const routes: Array<RouteRecordRaw> = [
     ],
   },
   {
+    path: "/recordPlayer/:type/:id",
+    name: "RecordPlayer",
+    component: () => import("../components/StoryRecordViewer.vue"),
+  },
+  {
     path: "/404",
     name: "404",
     component: () => import("../components/NotFound.vue"),
