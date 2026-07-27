@@ -318,7 +318,15 @@ function extractVoiceLines(story, speakerMap, limit) {
   const lines = [];
   for (let index = 0; index < story.content.length; index++) {
     const unit = story.content[index];
-    const text = String(unit.TextJpVoice || unit.TextJp || "").trim();
+    
+    // 如果 LLM 判定这句没有台词并将 TextJpVoice 明确设为 ""，就不再回退到包含拟声词的 TextJp
+    let text = "";
+    if (unit.TextJpVoice !== undefined && unit.TextJpVoice !== null) {
+      text = String(unit.TextJpVoice).trim();
+    } else {
+      text = String(unit.TextJp || "").trim();
+    }
+    
     if (!text) continue;
 
     const speakers = inferSpeakers(unit);
@@ -764,9 +772,29 @@ async function pollTasks({ args, manifest, story, outputPath }) {
       if (task.status === "COMPLETED" && completedAudioExists && !args.force) {
         continue;
       }
-      if (["FAILED", "CANCELLED"].includes(task.status)) {
-        continue;
-      }
+        if (["FAILED", "CANCELLED"].includes(task.status)) {
+          if (!task.retryCount || task.retryCount < 2) {
+            console.log(`Task ${task.taskId} failed/cancelled. Retrying... (${task.retryCount || 0}/2)`);
+            const retryData = await apiRequest(args, `/generate`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                text: task.text,
+                referenceId: task.referenceId,
+                model: args.model,
+                temperature: args.temperature,
+              }),
+            });
+            task.taskId = retryData.taskId;
+            task.status = retryData.status;
+            task.retryCount = (task.retryCount || 0) + 1;
+            active++;
+            changed = true;
+          } else {
+            console.error(`[ERROR] Task for index ${task.index} failed permanently: ${task.errorMessage || task.status}`);
+          }
+          continue;
+        }
 
       const data = await apiRequest(args, `/tasks/${task.taskId}`);
       task.status = data.status;
@@ -930,14 +958,25 @@ async function main() {
   }
 
   if (["poll", "all"].includes(args.stage)) {
+    let failedTasksCount = 0;
     while (true) {
       const { active } = await pollTasks({ args, manifest, story, outputPath });
       saveManifest(manifestPath, manifest);
       console.log(`Polling round done, active tasks: ${active}`);
+      
+      failedTasksCount = Object.values(manifest.tasks).filter(t => 
+        ["FAILED", "CANCELLED"].includes(t.status) && t.retryCount >= 2
+      ).length;
+      
       if (active === 0) {
         break;
       }
       await sleep(args.pollInterval * 1000);
+    }
+    
+    if (failedTasksCount > 0) {
+      console.error(`\n[CRITICAL ERROR] Finished polling, but ${failedTasksCount} tasks permanently failed to generate voice! Please check the logs above.`);
+      process.exit(1);
     }
   }
 }

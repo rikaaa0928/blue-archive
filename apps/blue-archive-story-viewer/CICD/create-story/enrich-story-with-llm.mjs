@@ -148,7 +148,9 @@ Rules:
 - Very expressive or multi-beat lines may use up to 4 tags placed near the
   relevant phrase, not only at the beginning.
 - Calm one-sentence dialogue can use 0-1 tag. Do not tag every phrase.
-- For title/place/narration lines, use no tag unless a clear delivery cue helps.
+- TextJpVoice must only contain spoken dialogue, emotion tags, and basic punctuation.
+- Remove non-spoken sound effects, actions, or parentheses like "（ズルッ）", "（ドサッッッ！！！）", or "（ガチャッ）" from TextJpVoice.
+- If a line contains NO spoken dialogue (e.g., only sound effects or actions), set TextJpVoice to an empty string "".
 - Return strict JSON only. No markdown.`;
 
 function printUsage() {
