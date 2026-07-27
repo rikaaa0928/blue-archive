@@ -466,10 +466,10 @@ const IterateStoryUnitFun: IterateStoryUnit = {
           effect => effect.type === "action"
         );
         // 调整特效造成的走人
-        const hideEffect = actionEffect.filter(
+        const hideEffect = actionEffect.map(
           effect =>
-            /^falldown[RL]$/i.test(effect.effect) ||
-            /^d[rl]?$/i.test(effect.effect) ||
+            /^falldown[RL]$/i.exec(effect.effect) ||
+            /^d[rl]?$/i.exec(effect.effect) ||
             effect.effect === "hide"
         );
         if (hideEffect.length > 0) {
