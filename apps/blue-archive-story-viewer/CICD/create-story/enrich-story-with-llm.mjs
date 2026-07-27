@@ -705,6 +705,9 @@ async function main() {
     throw new Error("Story JSON must have a content array");
   }
 
+  // Update translator signature to reflect AI and human collaboration
+  story.translator = "ba-l10n × Gemini × rikaaa0928";
+
   const textUnits = collectTextUnits(story);
   let targets = textUnits.filter(unit => shouldProcess(unit, args.force));
   if (args.limit > 0) {
