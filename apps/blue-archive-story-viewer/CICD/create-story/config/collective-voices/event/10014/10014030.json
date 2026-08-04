@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 2,
+  "source": {
+    "storyPath": "public/story/event/10014/10014030.json",
+    "contentLength": 105,
+    "scanDigest": "sha256:09aa9a6c9c17be79132e4084ac58817ac68364485d2dc2163d7650d01ba85c6b"
+  },
+  "lines": [
+    {
+      "storyIndex": 104,
+      "kind": "collective",
+      "status": "ready",
+      "expected": {
+        "speaker": "방과후 디저트부",
+        "scriptKr": "#na;방과후 디저트부;어어어어어엉-!?!?\n#fontsize;100",
+        "ttsText": "[screaming][shocked]ええええええー！？"
+      },
+      "members": [
+        "요시미",
+        "아이리",
+        "나츠"
+      ]
+    }
+  ]
+}

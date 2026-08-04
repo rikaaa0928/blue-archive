@@ -1,5 +1,6 @@
 /* eslint-disable max-len */
 import type { DistrictEventStoryList } from "@/types/StoryJson";
+import generatedStories from "./eventStoryIndex.generated.json";
 
 export type PlaceMap = typeof placeMap;
 
@@ -13,9 +14,18 @@ export const placeMap = [
     TextTw: "山海經高級中學",
     TextEn: "Shanhaijing Academy",
   },
+  {
+    code: "trinity",
+    TextCn: "圣三一综合学园",
+    TextKr: "트리니티 종합학원",
+    TextJp: "トリニティ総合学園",
+    TextTh: "โรงเรียนสามัญทรีนิตี้",
+    TextTw: "三一綜合學園",
+    TextEn: "Trinity General School",
+  },
 ];
 
-export const stories: DistrictEventStoryList = [
+const manualStories: DistrictEventStoryList = [
   {
     place: "shanhaijing",
     title: {
@@ -383,4 +393,9 @@ export const stories: DistrictEventStoryList = [
       },
     ],
   },
+];
+
+export const stories: DistrictEventStoryList = [
+  ...manualStories,
+  ...(generatedStories as DistrictEventStoryList),
 ];

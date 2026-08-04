@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 2,
+  "source": {
+    "storyPath": "public/story/event/10014/10014020.json",
+    "contentLength": 126,
+    "scanDigest": "sha256:a964c1219d9ec1ee7a284c001189049d3adcb1d04281690a408df46a8d06f75a"
+  },
+  "lines": [
+    {
+      "storyIndex": 75,
+      "kind": "unknown-speaker",
+      "status": "ready",
+      "expected": {
+        "speaker": "???",
+        "scriptKr": "#na;???;……아. 선생님. 여깁니다.",
+        "ttsText": "[gentle]……あ、先生。こちらです。"
+      },
+      "resolution": "character",
+      "resolvedSpeaker": "스즈미",
+      "evidence": "Suzumi appears immediately after the off-screen greeting and continues addressing Sensei."
+    }
+  ]
+}

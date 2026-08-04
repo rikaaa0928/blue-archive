@@ -22,7 +22,6 @@ const props = withDefaults(
   }
 );
 
-// eslint-disable-next-line vue/no-setup-props-destructure
 const openChapters: Ref<number[]> = ref([(props.totalLength ?? -1) - 1]);
 const language = computed(() => settingsStore.getLang);
 
@@ -46,6 +45,30 @@ function handleOpenChapters(index: number) {
   }
 }
 
+const storyRouteMap = {
+  mainStory: {
+    name: "MainStoryDetails",
+    queryType: "main",
+  },
+  otherStory: {
+    name: "OtherStoryDetails",
+    queryType: "other",
+  },
+  eventStory: {
+    name: "EventStoryDetails",
+    queryType: "event",
+  },
+} as const;
+
+function getStoryRoute(storyId: number) {
+  const target = storyRouteMap[props.type];
+  return {
+    name: target.name,
+    params: { id: storyId },
+    query: { type: target.queryType },
+  };
+}
+
 onMounted(() => import("@/components/StoryViewer.vue"));
 </script>
 
@@ -62,13 +85,9 @@ onMounted(() => import("@/components/StoryViewer.vue"));
     <div class="story-line-container__content flex flex-col w-full">
       <router-link
         v-for="section in sections"
-        :to="{
-          name: `${'mainStory' === type ? 'Main' : 'Other'}StoryDetails`,
-          params: { id: section.story_id },
-          query: { type: 'mainStory' === type ? 'main' : 'other' },
-        }"
         v-show="openChapters.includes(index)"
         :key="section.story_id"
+        :to="getStoryRoute(section.story_id)"
       >
         <story-brief-block
           :title="getTitleText(section.title, language)"

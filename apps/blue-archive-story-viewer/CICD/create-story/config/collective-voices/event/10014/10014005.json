@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 2,
+  "source": {
+    "storyPath": "public/story/event/10014/10014005.json",
+    "contentLength": 47,
+    "scanDigest": "sha256:76df884b06a0cfd8afa25aa7760498c52f7b8146da2ab24dde4bc39f2f31654b"
+  },
+  "lines": [
+    {
+      "storyIndex": 4,
+      "kind": "unknown-speaker",
+      "status": "ready",
+      "expected": {
+        "speaker": "???",
+        "scriptKr": "#na;???;……여보세요?",
+        "ttsText": "[hesitant]……もしもし？"
+      },
+      "resolution": "character",
+      "resolvedSpeaker": "카즈사",
+      "evidence": "The caller is revealed immediately afterward as Kazusa via the communication portrait and continuing conversation."
+    },
+    {
+      "storyIndex": 5,
+      "kind": "unknown-speaker",
+      "status": "ready",
+      "expected": {
+        "speaker": "???",
+        "scriptKr": "#na;???;아, 진짜 연결되는구나. 설마 설마 했는데…….",
+        "ttsText": "[surprised]あ、[relieved]本当に繋がるんだ。"
+      },
+      "resolution": "character",
+      "resolvedSpeaker": "카즈사",
+      "evidence": "The caller is revealed immediately afterward as Kazusa via the communication portrait and continuing conversation."
+    },
+    {
+      "storyIndex": 6,
+      "kind": "unknown-speaker",
+      "status": "ready",
+      "expected": {
+        "speaker": "???",
+        "scriptKr": "#na;???;그……. 혹시 거기 샬레인가요? ……선생님?",
+        "ttsText": "[hesitant]その……[softly]先生、今シャーレにいる？"
+      },
+      "resolution": "character",
+      "resolvedSpeaker": "카즈사",
+      "evidence": "The caller is revealed immediately afterward as Kazusa via the communication portrait and continuing conversation."
+    }
+  ]
+}

@@ -39,3 +39,6 @@ index.json
 
 # Record Story script temp outputs
 scripts/record-story/videos/
+CICD/create-story/adapter/out/
+
+*.json.bak

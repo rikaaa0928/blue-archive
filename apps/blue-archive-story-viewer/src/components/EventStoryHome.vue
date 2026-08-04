@@ -1,12 +1,12 @@
 <template>
   <div
-    class="main-story-container fill-screen flex-vertical"
     v-if="!isStorySelected"
+    class="main-story-container fill-screen flex-vertical"
   >
     <div
       v-for="group in groupedStories"
-      class="w-full max-w-[480px] flex flex-col items-start"
       :key="group.place"
+      class="w-full max-w-[480px] flex flex-col items-start"
     >
       <h3 class="mb-2 sticky top-0">
         {{ getPlaceName(group.place, userLanguage) }}
@@ -14,12 +14,12 @@
 
       <story-line-container
         v-for="(story, index) in group.stories"
+        :key="index"
         :title="story.title"
         :avatar="story.avatar"
         :index="index"
         :sections="story.sections"
-        type="otherStory"
-        :key="index"
+        type="eventStory"
       />
     </div>
   </div>

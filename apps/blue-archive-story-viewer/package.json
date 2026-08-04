@@ -12,9 +12,15 @@
     "check": "eslint --fix ./src/ ./CICD/ ./public/config/yaml/ --ext .js,.ts,.vue,.yml,.yaml && vue-tsc --noEmit --skipLibCheck",
     "up": "taze major -I",
     "create-story": "node ./CICD/create-story/create-favor.mjs",
-    "import-ba-l10n-story": "node ./CICD/create-story/import-ba-l10n-story.mjs",
+    "process-story": "node ./CICD/create-story/process-story.mjs",
+    "sync-ba-story-data": "node ./CICD/create-story/sync-ba-story-data.mjs",
+    "import-ba-raw-story": "node ./CICD/create-story/import-ba-raw-story.mjs",
+    "fill-text-cn": "node ./CICD/create-story/fill-text-cn-from-tw.mjs",
+    "find-event-story": "node ./CICD/create-story/find-event-story.mjs",
+    "generate-event-story-index": "node ./CICD/create-story/generate-event-story-index.mjs",
     "enrich-story-llm": "node ./CICD/create-story/enrich-story-with-llm.mjs",
     "voice-zero-tts": "node ./CICD/create-story/voice-zero-tts.mjs",
+    "download-ba-character": "node ./CICD/create-story/download-ba-character.mjs",
     "publish-voice-r2": "node ./CICD/create-story/publish-voice-r2.mjs"
   },
   "dependencies": {
@@ -40,7 +46,8 @@
     "radash": "~12.1.0",
     "vite-plugin-vue-devtools": "^7.7.0",
     "unocss": "^65.4.0",
-    "globals": "^15.0.0"
+    "globals": "^15.0.0",
+    "opencc-js": "1.4.1"
   },
   "devDependencies": {
     "@google/genai": "^1.0.0",

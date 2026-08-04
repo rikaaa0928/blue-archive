@@ -81,6 +81,16 @@ function handleSelect(select: number) {
   }, 400);
 }
 
+/**
+ * 录制模式自动选择时模拟完整的按下和松开动画。
+ */
+function animateSelect(select: number) {
+  handleSelectMouseDown(select);
+  setTimeout(() => handleSelect(select), 150);
+}
+
+defineExpose({ animateSelect });
+
 const mapSelection = computed(() =>
   props.selection.map(it => ({
     SelectionGroup: it.SelectionGroup,

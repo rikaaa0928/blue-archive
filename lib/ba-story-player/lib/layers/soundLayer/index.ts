@@ -168,14 +168,37 @@ export function soundInit() {
 
     if (playAudioInfo.voiceJPUrl) {
       if (voice) {
+        voice.off("end");
+        voice.off("loaderror");
+        voice.off("playerror");
         voice.stop();
       }
-      voice = getAudio(playAudioInfo.voiceJPUrl);
-      voice.volume(channelVolume("voiceVolume"));
-      voice.once("end", () => {
-        eventBus.emit("playVoiceJPDone", playAudioInfo.voiceJPUrl || "");
-      });
-      voice.play();
+      const voiceUrl = playAudioInfo.voiceJPUrl;
+      voice = getAudio(voiceUrl);
+      const currentVoice = voice;
+      let settled = false;
+      const cleanup = () => {
+        currentVoice.off("end", handleEnd);
+        currentVoice.off("loaderror", handleError);
+        currentVoice.off("playerror", handleError);
+      };
+      const handleEnd = () => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        eventBus.emit("playVoiceJPDone", voiceUrl);
+      };
+      const handleError = (_id: number, error: unknown) => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        eventBus.emit("playVoiceJPError", { url: voiceUrl, error });
+      };
+      currentVoice.volume(channelVolume("voiceVolume"));
+      currentVoice.once("end", handleEnd);
+      currentVoice.once("loaderror", handleError);
+      currentVoice.once("playerror", handleError);
+      currentVoice.play();
     }
   }
 

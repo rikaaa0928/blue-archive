@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 2,
+  "source": {
+    "storyPath": "public/story/event/10014/10014025.json",
+    "contentLength": 138,
+    "scanDigest": "sha256:966bf757dfceafd69c99c72965b8d7939cc8c6832eee549ee8568cdb87f1d0cd"
+  },
+  "lines": [
+    {
+      "storyIndex": 15,
+      "kind": "unknown-speaker",
+      "status": "ready",
+      "expected": {
+        "speaker": "???",
+        "scriptKr": "#na;???;아하하하하!! 트리니티의 심판자, 이 우자와 레이사로부터 숨을 수는 없습니다. 이 악당들!!",
+        "ttsText": "[laughing][loud]ハッハッハー！[heroic tone]トリニティの審判者、宇沢レイサから隠れることなどできません！"
+      },
+      "resolution": "character",
+      "resolvedSpeaker": "레이사",
+      "evidence": "The speaker explicitly identifies herself as Uzawa Reisa, and Suzumi names Reisa immediately afterward."
+    }
+  ]
+}

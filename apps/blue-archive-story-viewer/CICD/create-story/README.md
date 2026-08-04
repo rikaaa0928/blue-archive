@@ -21,34 +21,110 @@ pnpm create-favor 10000 1 # 在对应目录创建一个包含 *02, *03, *05, *06
 pnpm create-favor 10000 2 1 2 3 # 在对应目录创建一个包含 *01, *02, *03 的索引
 ```
 
-## 从 ba-l10n 导入日文剧情
+## 完整处理剧情
 
-`import-ba-l10n-story.mjs`: 从 `ba-l10n.cnfast.top` 的剧情数据接口下载指定章节，并转换成本项目播放器使用的 `public/story/<type>/<id>.json` 格式。
+`process-story.mjs` 按顺序执行完整发布流水线：
 
-默认只导入日文文本到 `TextJp`，并保留源数据里的 `Script` 到 `ScriptKr`，用于播放器解析角色、表情、标题、选项等脚本信息。`VoiceJp` 暂时留空。
+1. 从 GL `ScenarioScriptDBSchema.json` 导入完整故事，并用 ba-l10n 补空语言字段；
+   已有 JSON 时跳过，以便续跑。
+2. 使用 Vertex Gemini 补齐 `TextJpVoice`。
+3. 准备角色参考音频、上传参考声音、创建并轮询 ZeroTTS 任务、下载语音。
+4. 上传生成语音到 Cloudflare R2，并把 `VoiceJp` 改写为公网 URL。
+
+```bash
+pnpm process-story 1102
+pnpm process-story 1102 --schema /path/to/ScenarioScriptDBSchema.json
+pnpm process-story 1102 --limit 2
+pnpm process-story 1102 --force
+pnpm process-story 1102 --changed-only
+```
+
+`--limit` 同时限制本次 LLM 文本数和 TTS 台词数，适合短验证。再次不带
+`--force` 运行时，会从 JSON 和本地 manifest 中的现有进度继续。
+使用 `--changed-only` 时，只重新生成并发布当前 `TextJpVoice` 与上次成功
+发布文本不同的语音。
+
+## 精准同步原始 GL 剧情表
+
+先构建固定版本的下载器镜像，再运行项目入口：
+
+```bash
+docker build \
+  -t ba-asset-downloader:v2.3.0 \
+  CICD/create-story/docker
+
+pnpm sync-ba-story-data
+```
+
+该入口只下载 `ExcelDB.db`，只导出剧情、活动和角色解析需要的六张 JSON，不会同步
+整个 Table catalog 中的战斗地图等资源。数据根目录默认由
+`BA_ASSET_DATA_DIR` 或 `BA_SCENARIO_SCHEMA_PATH` 推导，也可显式指定：
+
+```bash
+pnpm sync-ba-story-data --data-dir /absolute/path/ba-asset-data-global
+pnpm sync-ba-story-data --skip-download
+```
+
+首次在新数据目录运行仍需由上游从客户端 runtime 生成当前版本对应的解析 schema。
+容器设计、缓存、安全边界和上游升级检查见
+[`docker/README.md`](./docker/README.md)。
+
+## 从原始 GL Table 导入完整剧情
+
+`import-ba-raw-story.mjs` 默认读取 Blue Archive Global Table 解码出的
+`ScenarioScriptDBSchema.json`，按 `GroupId` 生成
+`public/story/<type>/<id>.json`。原始 Table 始终是剧情帧、演出和行顺序的唯一
+骨架；导入器默认访问 `ba-l10n.cnfast.top`，只补充原始行中为空的语言字段。
+
+原始记录中的全部无对白演出帧、`ScriptKr`、日文、选择项、BGM、音效、背景、
+等待、转场和额外字段都会保留。GL 同时提供官方繁中、英文和泰文，分别写入
+`TextTw`、`TextEn` 和 `TextTh`。GL 没有简中，`TextCn` 默认从 ba-l10n 的
+`g_tw_cn` 补充；任何已有官方非空文本都不会被 ba-l10n 覆盖。
+
+ba-l10n 仍未提供 `TextCn` 时，繁中回退转换会先用当前 GL 角色表的
+`NameTW`/`NicknameTW` 与播放器实际从 CDN 加载的
+`ScenarioCharacterNameExcelTable.json` 的 `NameCN`/`NicknameCN` 按
+`CharacterName` 哈希生成规范名称映射，然后用 OpenCC `tw2sp` 转换其余正文。
+CDN 表按播放器相同的一小时粒度缓存到 `.local-files/player-data/`。名称按长度从长到短
+匹配，避免组合名被较短的单人名提前替换；有多个候选译名的歧义项不会自动替换。
+没有角色立绘或头像的舞台标签也不会进入正文名称映射。
+
+该规则覆盖单名以及正文中的“姓氏 + 名字”组合，例如 `千紗 → 和纱`、
+`杏山千紗 → 杏山和纱`。播放器角色表没有独立姓氏字段，因此当前不维护单姓的
+规范译名映射；单独出现的姓氏只经过 OpenCC 转换，后续如有明确数据源再扩展。
+
+两套数据不能按数组下标合并。导入器使用规范化后的日文文本和原始顺序匹配，
+支持 HTML ruby 转播放器 ruby，并会拆分、重新合并 `[s]`、`[s1]` 等选择项。
+下载结果缓存在：
+
+```text
+.local-files/ba-l10n/story/<source-kind>/<story-id>.json
+```
 
 示例：
 
 ```bash
-pnpm import-ba-l10n-story 1101 --force
+pnpm import-ba-raw-story 1101 \
+  --schema /Volumes/storage/ba-asset-data-global/extracted/Table/ExcelDB/ScenarioScriptDBSchema.json \
+  --type group \
+  --dry-run
 ```
 
-等价于下载：
-
-```text
-https://ba-l10n.cnfast.top/data/story/normal/1101.json
-```
-
-并生成：
-
-```text
-public/story/main/1101.json
-```
-
-也可以传 ba-l10n 的页面 URL：
+默认复用缓存，且缓存或远端 ba-l10n 无法读取时会终止导入。需要更新或明确离线时：
 
 ```bash
-pnpm import-ba-l10n-story https://ba-l10n-aws.cnfast.top/scenario/1101 --force
+pnpm import-ba-raw-story 1101 --type group --refresh-ba-l10n --dry-run
+pnpm import-ba-raw-story 1101 --type group --no-ba-l10n --dry-run
+pnpm import-ba-raw-story 1101 --type group \
+  --ba-l10n-input /path/to/ba-l10n-1101.json --dry-run
+```
+
+固定服务配置也可以放在应用或仓库 `.env`：
+
+```dotenv
+BA_L10N_BASE_URL=https://ba-l10n.cnfast.top
+BA_L10N_SOURCE_KIND=normal
+# BA_L10N_DISABLE=1
 ```
 
 常用参数：
@@ -56,18 +132,67 @@ pnpm import-ba-l10n-story https://ba-l10n-aws.cnfast.top/scenario/1101 --force
 - `--type <main|other|favor|event|group|mini>`：输出剧情类型，默认 `main`
 - `--out-id <id>`：输出剧情 ID，默认使用源章节 ID
 - `--directory-id <id>`：输出到 `favor/event/group/mini` 这类分目录剧情时指定目录 ID
-- `--input <file>`：从本地 ba-l10n JSON 文件转换，不联网
+- `--schema <file>`：完整 schema 或单组 `content` 导出
+- `--refresh-ba-l10n`：忽略缓存，重新获取补充翻译
+- `--no-ba-l10n`：完全离线，只使用原始 Table
+- `--require-ba-l10n`：兼容旧命令；现在 ba-l10n 无法读取时默认就会终止
+- `--ba-l10n-input <file>`：使用本地 ba-l10n JSON，便于复现和测试
 - `--dry-run`：只打印转换统计，不写文件
 - `--force`：覆盖已存在的输出文件
 
-## 自动翻译和生成日语配音情绪稿
+导入器不会读取或合并任何已有 viewer JSON。目标文件存在且没有传 `--force`
+时会直接拒绝覆盖；传入 `--force` 会完全以原始 Table 重建，旧翻译、
+`VoiceJp` 和 `TextJpVoice` 不会保留。
+
+活动剧情可以先按活动 ID、日文名或韩文名查询：
+
+```bash
+pnpm find-event-story 801
+pnpm find-event-story 桜花
+pnpm find-event-story 10000005
+pnpm --silent find-event-story 벚꽃 --json
+```
+
+`find-event-story.mjs` 从 `BA_SCENARIO_SCHEMA_PATH` 同目录的活动表和本地化表
+解析活动名称、原版/复刻关系以及按顺序排列的剧情 `GroupId`。也可以通过
+`--schema` 或 `--table-dir` 指向另一套服务器数据。数字没有命中活动 ID 时会
+自动作为剧情 `GroupId` 反查；`--group-id` 可以强制使用反查模式。
+
+活动章节导入后，用同一个活动 ID 或任意章节 GroupId 生成前端入口：
+
+```bash
+pnpm generate-event-story-index 10014005 --place trinity
+```
+
+生成结果写入 `src/index/eventStoryIndex.generated.json`，并与已有手工索引一起
+展示。脚本从 ba-l10n 获取活动及章节的六语言标题和简介，缓存位于
+`.local-files/ba-l10n/index/event/`。默认只收录已经导入到
+`public/story/event/` 的章节；重新运行会按 `event_id` 替换旧条目，不会重复
+追加。常用选项：
+
+- `--refresh-ba-l10n`：刷新活动 manifest、键表和多语言字符串缓存
+- `--dry-run`：打印生成结果，不写索引
+- `--include-missing`：同时生成尚无剧情 JSON 的章节入口，通常不建议
+- `--schema` / `--table-dir`：临时使用另一套活动表
+
+## 生成日语配音情绪稿
 
 `enrich-story-with-llm.mjs`: 调用 Vertex Gemini，为已导入的剧情补齐：
 
-- `TextCn`：简体中文本地化文本
 - `TextJpVoice`：基于原始 `TextJp` 插入情绪 tag 的日语配音稿
 
-脚本会把剧情标题、地点、角色表、全局剧情大纲、目标行前后文、脚本 cue、音效和 BGM 一起提供给 LLM，避免只按单句翻译或标注。
+当前 enrichment 只生成配音稿，不翻译空的 `TextCn`。脚本会把剧情标题、地点、
+角色表、现有中文文本、全局剧情大纲、
+目标行前后文、脚本 cue、音效和 BGM 一起提供给 LLM，避免只按单句标注。
+
+情绪 tag 支持自由格式的英文自然语言描述，`shared-config.mjs` 中的
+`voiceTagExamples` 只用于启发模型，不是允许列表。试听后确认的人工调音文本
+可以加入 `textJpVoiceOverrides`；导入时会按剧情 ID 以及预期的
+`TextJp`、`ScriptKr` 精确校验，LLM 阶段即使使用 `--force` 也不会覆盖。
+源文本发生变化或匹配不唯一时脚本会直接报错，要求人工更新配置。
+
+包含 `[s]`、`[s1]` 等标记的选项行保持空的 `TextJpVoice` 和 `VoiceJp`，
+不会交给 LLM 或 TTS 生成语音。
 
 示例：
 
@@ -97,38 +222,8 @@ pnpm enrich-story-llm 1101 --type group --dry-run
 - `--batch-size <n>`：每次调用处理的文本行数，默认 `12`
 - `--context-radius <n>`：目标批次前后提供多少条文本上下文，默认 `8`
 - `--limit <n>`：最多处理多少条，便于试跑
-- `--force`：重做已经存在 `TextCn` 和 `TextJpVoice` 的行
+- `--force`：重做已经存在 `TextJpVoice` 的行
 - `--output <file>`：写入另一个 JSON 文件，默认覆盖源文件
-
-## 本地语音文件临时服务
-
-开发环境下，Vite 会把项目内 `.local-files` 目录通过 `/api/local-files/` 暴露出来，用于临时播放本地生成的 TTS 音频。
-
-示例：
-
-```text
-.local-files/tts/group/1101/0006.mp3
-```
-
-对应可访问 URL：
-
-```text
-/api/local-files/tts/group/1101/0006.mp3
-```
-
-剧情 JSON 里的 `VoiceJp` 可以直接写这个 URL。播放器遇到以 `/` 或 `http(s)://` 开头的 `VoiceJp` 时会直接播放，不再拼接官方 CDN 的 `Audio/VoiceJp` 路径。
-
-默认文件根目录是：
-
-```text
-apps/blue-archive-story-viewer/.local-files
-```
-
-也可以用环境变量覆盖：
-
-```bash
-BA_LOCAL_FILE_ROOT=/path/to/generated/files pnpm dev
-```
 
 ## ZeroTTS 语音生成流水线
 
@@ -136,17 +231,27 @@ BA_LOCAL_FILE_ROOT=/path/to/generated/files pnpm dev
 
 脚本分阶段执行，所有中间状态保存在 `.local-files/tts/<type>/<storyId>/voice-zero-tts-manifest.json`，可以中断后继续。
 
-参考音频来源默认使用：
+所有故事共用的角色参考音频保存在
+`.local-files/tts/references/<韩文名_资源名>/`。同一角色只生成一套
+`reference.mp3`、`reference.txt` 和 `reference-manifest.json`。
+
+参考音频来源默认使用项目内部目录：
 
 ```text
-/Users/rikaaa0928/src/yling/ai/skill/ba-video-generator-v3/ba-downloader/output
+.local-files/ba-characters
 ```
 
-下载器暂时不重写，脚本只复用已有 Python 下载器的输出。若缺少某个角色，可以加 `--download-missing` 调用现有下载器补齐：
+`download-ba-character.mjs` 是原 `download.py` 的 Node.js 等价实现，不依赖
+外部 Python 项目或第三方 Node 包。它支持角色查询、立绘、回忆大厅、设定集、
+日配语音与文本下载：
 
 ```bash
-pnpm voice-zero-tts 1101 --type group --stage prepare --download-missing
+pnpm download-ba-character 晴奈
+pnpm download-ba-character --list
 ```
+
+下载器是人工补充本地资源的独立工具，不参与剧情角色身份解析或 TTS 运行。
+TTS 缺少本地角色目录时会直接报错并停止，由人工补齐后再继续。
 
 先只准备参考音频，不联网：
 
@@ -166,34 +271,42 @@ ZERO_TTS_API_KEY=... pnpm voice-zero-tts 1101 --type group --stage upload
 ZERO_TTS_API_KEY=... pnpm voice-zero-tts 1101 --type group --stage all
 ```
 
-下载完成后，脚本会把每句生成音频写到：
+下载完成后，脚本会把每句生成音频写到本地工作目录，并在 manifest
+中记录 `audioPath`、生成文本和文本 SHA-256。R2 上传成功后还会记录
+`publishedText`、`publishedTextHash` 和发布时间：
 
 ```text
 .local-files/tts/group/1101/lines/0006.mp3
 ```
 
-并把对应剧情行的 `VoiceJp` 写成：
-
-```text
-/api/local-files/tts/group/1101/lines/0006.mp3
-```
+ZeroTTS 阶段不会修改剧情 JSON 的 `VoiceJp`。随后
+`publish-voice-r2.mjs` 从 manifest 读取已完成音频，上传到 R2 后直接写入公网 URL。
 
 常用参数：
 
 - `--stage <prepare|upload|tasks|poll|all>`：执行阶段，默认 `prepare`
 - `--limit <n>`：只处理前 n 句，用于小样本测试
 - `--force`：重建参考音频、重建任务或覆盖已下载音频
+- `--changed-only`：只处理相对上次成功发布发生变化的 `TextJpVoice`
 - `--model <model>`：ZeroTTS 模型，默认 `zerotts-v1`
-- `--speaker-map <file>`：覆盖脚本角色名到下载器角色目录名的映射
-- `--download-missing`：缺少角色语音目录时调用现有 Python 下载器
+- `--character-root <dir>`：本地角色参考资源根目录
+- `--speaker-map <file>`：极少数目录名不等于播放器 `NameCN` 时指定目录名
 - `--reference-min <n>`：每个角色参考音频最低总秒数，默认 `20`
 - `--reference-max <n>`：每个角色参考音频最高总秒数，默认 `60`
 - `--reference-min-clip <n>`：单条参考音频最低秒数，默认 `5`
 - `--reference-gap <n>`：参考片段拼接间隔秒数，默认 `0.8`
 
+导入、情绪稿、特殊说话人配置和 TTS 共用 `scenario-script-speakers.mjs` 解析
+`ScriptKr`。具名角色完全沿用播放器流程：韩文脚本标识经
+`xxhash32(seed=0)` 得到 `CharacterName`，再查询播放器 CDN 的
+`ScenarioCharacterNameExcelTable.json`。TTS 直接用该记录的 `NameCN` 定位
+`.local-files/ba-characters/<NameCN>/`，运行时不查询 GameKee，也不做另一套别名
+匹配。`--speaker-map` 只覆盖本地目录名，不改变播放器角色身份。
+
 ## 发布语音到 Cloudflare R2
 
-`publish-voice-r2.mjs`: 本地生成 ZeroTTS 音频后，把剧情 JSON 中的 `/api/local-files/...` 语音上传到 R2，并把 `VoiceJp` 改写成 R2 公网 URL。
+`publish-voice-r2.mjs`: 从 ZeroTTS manifest 读取本地生成音频，上传到 R2，
+并把 `VoiceJp` 直接写成 R2 公网 URL。
 
 这个步骤设计为本地执行。仓库中只提交改写后的 story JSON，不提交 `.local-files` 音频目录；Cloudflare Pages 部署 Action 只负责构建和发布静态站，不负责生成或上传语音。
 

@@ -49,10 +49,14 @@ let privateState = initPrivateState();
  */
 const unexistL2dSoundEvent = ["sound/Nonomi_MemorialLobby_3_3"];
 
-export async function checkloadAssetAlias(alias: string, url: string) {
+export async function checkloadAssetAlias(
+  alias: string,
+  url: string,
+  reportFailure = true
+) {
   if (!resourcesLoader.loadedList.includes(alias)) {
     resourcesLoader.loadedList.push(alias);
-    return await loadAssetAlias(alias, url);
+    return await loadAssetAlias(alias, url, reportFailure);
   }
   return Promise.resolve();
 }
@@ -114,7 +118,7 @@ export const eventEmitter = {
   /**
    * 注册事件
    */
-  init() {
+  init(deferPlayback = false) {
     //初始化值
     for (const key of Object.keys(eventEmitter) as Array<
       keyof typeof eventEmitter
@@ -182,6 +186,16 @@ export const eventEmitter = {
       }
       this.VoiceJpDone = true;
     });
+    eventBus.on("playVoiceJPError", ({ url, error }) => {
+      this.VoiceJpDone = true;
+      storyHandler.stopAuto();
+      const detail = error instanceof Error
+        ? error.message
+        : String(error || "Unknown audio error");
+      storyHandler.errorCallback(
+        new Error(`Voice playback failed (${url}): ${detail}`)
+      );
+    });
     eventBus.on("nextEpisodeDone", () => (this.nextEpisodeDone = true));
     eventBus.on("toBeContinueDone", () => (this.toBeContinueDone = true));
 
@@ -193,7 +207,9 @@ export const eventEmitter = {
     }
     storyHandler.unitPlaying = false;
     storyHandler.isEnd = false;
-    storyHandler.storyPlay().then();
+    if (!deferPlayback) {
+      storyHandler.storyPlay().then();
+    }
   },
 
   /**
@@ -495,7 +511,9 @@ export async function init(
   elementID: string,
   props: PlayerConfigs,
   endCallback: () => void,
-  errorCallback: () => void
+  errorCallback: (error?: unknown) => void,
+  deferPlayback = false,
+  deferredPlaybackReady?: () => void
 ) {
   //缓解图片缩放失真
   BaseTexture.defaultOptions.mipmap = 2;
@@ -519,7 +537,9 @@ export async function init(
       type: "fail",
       resourceName: `剧情对象中的 "content" 不能为 ${props.story.content}`,
     });
-    errorCallback();
+    errorCallback(new Error(
+      `Story content is empty or invalid: ${String(props.story?.content)}`
+    ));
     return;
   }
 
@@ -581,6 +601,13 @@ export async function init(
         resolve();
       }
     }).then(() => {
+      if (deferPlayback) {
+        // Recording pages keep the loading layer visible while the recorder
+        // connects to the fully initialized player/audio graph.
+        eventEmitter.init(true);
+        deferredPlaybackReady?.();
+        return;
+      }
       eventBus.emit("loaded");
       eventBus.emit("hidemenu");
       //开始发送事件
@@ -595,6 +622,7 @@ export async function init(
 export const resourcesLoader = {
   loadTaskList: [] as Promise<unknown>[],
   loadedList: [] as string[],
+  popupImageResolutionTasks: new Map<string, Promise<string>>(),
   /**
    * 初始化, 预先加载表资源供翻译层使用
    */
@@ -648,7 +676,7 @@ export const resourcesLoader = {
       //添加背景图片
       this.checkAndAdd(unit.bg, "url");
       //添加popupImage
-      this.checkAndAdd(unit.PopupFileName);
+      this.checkAndAddPopupImage(unit);
 
       //添加l2d spine资源
       if (unit.l2d) {
@@ -673,6 +701,7 @@ export const resourcesLoader = {
       if (!hasLoad) {
         this.loadTaskList.splice(0, this.loadTaskList.length);
         this.loadedList.splice(0, this.loadedList.length);
+        this.popupImageResolutionTasks.clear();
         hasLoad = true;
         callback();
       }
@@ -694,6 +723,67 @@ export const resourcesLoader = {
       }
       checkloadAssetAlias(url, url);
     }
+  },
+
+  /**
+   * Resolve popup filenames before playback. Story data normally uses a
+   * lowercase `popup` prefix, but a few object-storage keys use `Popup`.
+   * Repeated story units share one resolution task and receive the resolved URL.
+   */
+  checkAndAddPopupImage(unit: StoryUnit) {
+    const primaryUrl = unit.PopupFileName;
+    if (!primaryUrl) {
+      return;
+    }
+
+    let resolutionTask = this.popupImageResolutionTasks.get(primaryUrl);
+    if (!resolutionTask) {
+      resolutionTask = (async () => {
+        let primaryFailure: unknown;
+        try {
+          await checkloadAssetAlias(primaryUrl, primaryUrl, false);
+          return primaryUrl;
+        } catch (error) {
+          primaryFailure = error;
+        }
+
+        const fallbackUrl = utils.getPopupImageFallbackUrl(primaryUrl);
+        if (!fallbackUrl) {
+          console.error(
+            `[popup fallback] no fallback candidate for ${primaryUrl}`,
+            primaryFailure
+          );
+          throw primaryFailure;
+        }
+
+        console.warn(
+          `[popup fallback] ${primaryUrl} failed; trying ${fallbackUrl}`
+        );
+        try {
+          await checkloadAssetAlias(fallbackUrl, fallbackUrl, false);
+        } catch (fallbackFailure) {
+          console.error(
+            `[popup fallback] both candidates failed: ${primaryUrl} -> ${fallbackUrl}`,
+            primaryFailure,
+            fallbackFailure
+          );
+          eventBus.emit("oneResourceLoaded", {
+            type: "fail",
+            resourceName: fallbackUrl.substring(fallbackUrl.lastIndexOf("/") + 1),
+          });
+          throw fallbackFailure;
+        }
+        console.info(`[popup fallback] resolved ${fallbackUrl}`);
+        return fallbackUrl;
+      })();
+      this.popupImageResolutionTasks.set(primaryUrl, resolutionTask);
+    }
+
+    this.loadTaskList.push(
+      resolutionTask.then(resolvedUrl => {
+        unit.PopupFileName = resolvedUrl;
+      })
+    );
   },
 
   /**
@@ -932,6 +1022,18 @@ function waitForStoryUnitPlayComplete(currentIndex: number) {
             waitingKeys
           );
 
+          if (waitingKeys.includes("VoiceJpDone")) {
+            const voiceUrl = storyHandler.currentStoryUnit.audio?.voiceJPUrl;
+            reject(
+              new Error(
+                `Voice playback timed out at story index ${currentIndex}: ${
+                  voiceUrl || "unknown voice URL"
+                }`
+              )
+            );
+            return;
+          }
+
           // FIXME: 重写逻辑解决莫名其妙的播放卡死?
           // reject();
           // waitingKeys.forEach((key) => {
@@ -951,9 +1053,12 @@ function waitForStoryUnitPlayComplete(currentIndex: number) {
 export const storyHandler = {
   currentStoryIndex: 0,
   endCallback: () => {},
-  errorCallback: () => {},
+  errorCallback: ((error?: unknown) => void error) as (
+    error?: unknown
+  ) => void,
   unitPlaying: false,
   auto: false,
+  autoStartGeneration: 0,
   isEnd: false,
   isSkip: false,
 
@@ -1090,7 +1195,15 @@ export const storyHandler = {
         }
         this.unitPlaying = false;
       } catch (error) {
-        this.errorCallback();
+        const message = error instanceof Error
+          ? error.message
+          : String(error || "Unknown error");
+        const playbackError = new Error(
+          `Story playback failed at index ${this.currentStoryIndex}: ${message}`
+        );
+        console.error(playbackError, error);
+        this.unitPlaying = false;
+        this.errorCallback(playbackError);
       }
     }
   },
@@ -1122,22 +1235,21 @@ export const storyHandler = {
    */
   startAuto() {
     this.auto = true;
-    if (!this.unitPlaying) {
+    const generation = ++this.autoStartGeneration;
+    const continueWhenReady = () => {
+      if (!this.auto || this.isEnd || generation !== this.autoStartGeneration) {
+        return;
+      }
+      if (this.unitPlaying) {
+        setTimeout(continueWhenReady, 100);
+        return;
+      }
       if (this.currentStoryUnit.type !== "option") {
         this.storyIndexIncrement();
         this.storyPlay();
       }
-    } else {
-      //可能storyPlay正要结束但还没结束导致判断错误
-      setTimeout(() => {
-        if (!this.unitPlaying && this.auto) {
-          if (this.currentStoryUnit.type !== "option") {
-            this.storyIndexIncrement();
-            this.storyPlay();
-          }
-        }
-      }, 2000);
-    }
+    };
+    continueWhenReady();
   },
 
   /**
@@ -1145,19 +1257,27 @@ export const storyHandler = {
    */
   stopAuto() {
     this.auto = false;
+    this.autoStartGeneration++;
   },
 };
 
-async function loadAssetAlias(alias: string, src: string) {
-  return await loadAsset({
-    src: src,
-    alias: alias,
-  });
+async function loadAssetAlias(
+  alias: string,
+  src: string,
+  reportFailure = true
+) {
+  return await loadAsset(
+    {
+      src: src,
+      alias: alias,
+    },
+    reportFailure
+  );
 }
 
 type IAddOptions = { src: string; alias: string };
 
-async function loadAsset(param: IAddOptions) {
+async function loadAsset(param: IAddOptions, reportFailure = true) {
   // param: {
   //   "src": "xxx/Emoticon_Balloon_N.png",
   //   "alias": "Emoticon_Balloon_N.png"
@@ -1180,9 +1300,10 @@ async function loadAsset(param: IAddOptions) {
       } else if (/\.skel$/.test(param.src)) {
         // 是 spine 资源，显式猜测 atlas 路径并创建 bundle
         const atlasUrl = param.src.replace(/\.skel$/, ".atlas");
-        // 添加 spine 和 atlas 资源
-        Assets.load({ src: atlasUrl, alias: atlasUrl });
-
+        // Skeleton parsing resolves mesh regions through the atlas. Waiting for
+        // the atlas first avoids an intermittent `findRegion` race when the
+        // skeleton response completes faster than its atlas response.
+        await Assets.load({ src: atlasUrl, alias: atlasUrl });
         await Assets.load(param); // 需要 await 完成后才能加载出东西
 
         // 创建 Spine 实例，从实例中读取出 L2D 音频资源进行预载
@@ -1204,6 +1325,9 @@ async function loadAsset(param: IAddOptions) {
       return res;
     })
     .catch(err => {
+      if (!reportFailure) {
+        throw err;
+      }
       if (err.message?.includes("ERR_HTTP2_PROTOCOL_ERROR")) {
         console.error(`网络连接错误(${param.alias})：${err.message}`);
       }

@@ -1,156 +1,62 @@
 import fs from "fs";
 import path from "path";
 import url from "url";
+import { resolveStoryCharacterRoster } from "./ba-character-catalog.mjs";
+import {
+  inferScenarioRole,
+  parseScenarioScriptSpeakers,
+} from "./scenario-script-speakers.mjs";
+import {
+  applyStoryTextJpVoiceOverrides,
+  voiceTagExamples,
+  normalizeTextJpVoice,
+} from "./shared-config.mjs";
 
 const __dirname = path.dirname(url.fileURLToPath(import.meta.url));
 const appRoot = path.resolve(__dirname, "..", "..");
 
-const defaultModel = "gemini-3.5-flash-lite";
+const defaultModel = "gemini-3.6-flash";
 const defaultBatchSize = 12;
 const defaultContextRadius = 8;
 
 const flatStoryTypes = new Set(["main", "other"]);
 const nestedStoryTypes = new Set(["favor", "event", "group", "mini"]);
 
-const voiceTagExamples = [
-  "pause",
-  "emphasis",
-  "laughing",
-  "inhale",
-  "chuckle",
-  "tsk",
-  "singing",
-  "excited",
-  "laughing tone",
-  "interrupting",
-  "chuckling",
-  "excited tone",
-  "volume up",
-  "echo",
-  "angry",
-  "low volume",
-  "sigh",
-  "soft sigh",
-  "low voice",
-  "whisper",
-  "screaming",
-  "shouting",
-  "loud",
-  "surprised",
-  "confused",
-  "hesitant",
-  "embarrassed",
-  "teasing",
-  "playful",
-  "smug",
-  "deadpan",
-  "sarcastic",
-  "elegant tone",
-  "gentle",
-  "nervous",
-  "worried",
-  "relieved",
-  "determined",
-  "serious",
-  "panicked",
-  "frustrated",
-  "annoyed",
-  "awkward laugh",
-  "soft laugh",
-  "mischievous",
-  "proud",
-  "dramatic",
-  "matter-of-fact",
-  "short pause",
-  "exhale",
-  "delight",
-  "panting",
-  "audience laughter",
-  "with strong accent",
-  "volume down",
-  "clearing throat",
-  "sad",
-  "moaning",
-  "shocked",
-];
+const systemInstruction = `You are a senior Japanese voice director for Blue Archive.
 
-const characterNameGlossary = [
-  {
-    zh: "纯子",
-    ja: ["ジュンコ"],
-    ko: ["준코"],
-    forbiddenZh: ["朱莉", "茱莉", "朱里", "淳子", "俊子"],
-  },
-  {
-    zh: "明里",
-    ja: ["アカリ"],
-    ko: ["아카리"],
-    forbiddenZh: ["灯", "朱莉"],
-  },
-  {
-    zh: "晴奈",
-    ja: ["ハルナ"],
-    ko: ["하루나"],
-    forbiddenZh: ["春奈", "遥奈"],
-  },
-  {
-    zh: "泉",
-    ja: ["イズミ"],
-    ko: ["이즈미"],
-    forbiddenZh: ["和泉"],
-  },
-  {
-    zh: "日奈",
-    ja: ["ヒナ"],
-    ko: ["히나"],
-    forbiddenZh: ["雏", "阳奈"],
-  },
-  {
-    zh: "千夏",
-    ja: ["チナツ"],
-    ko: ["치나츠"],
-    forbiddenZh: ["千奈津"],
-  },
-  {
-    zh: "伊织",
-    ja: ["イオリ"],
-    ko: ["이오리"],
-    forbiddenZh: ["伊织里", "伊織"],
-  },
-];
-
-const systemInstruction = `You are a senior Blue Archive scenario localizer and Japanese voice director.
-
-Your job has two outputs for each requested story line:
-1. TextCn: high-quality Simplified Chinese localization of TextJp.
-2. TextJpVoice: the original Japanese TextJp enriched with concise voice emotion tags.
+Your only output for each requested story line is TextJpVoice: the original
+Japanese TextJp enriched with concise voice emotion tags.
 
 Rules:
 - Use the provided full story outline, character roster, local scene context,
   script cues, SFX, BGM, and neighboring lines.
-- Use the provided terminology glossary exactly. Character names in TextCn must
-  use the glossary Chinese forms whenever the matching Japanese name appears.
-- Never invent alternate Chinese character names.
-- TextCn must be Simplified Chinese only. Do not add translator notes.
-- TextCn should preserve Blue Archive tone: light novel/anime dialogue,
-  natural Chinese punctuation, speaker intent, jokes, and honorific nuance
-  when useful.
-- TextCn should preserve line breaks roughly. Preserve important markup such as
-  [ruby=...][/ruby], color tags, and wait tags if present.
 - TextJpVoice must stay Japanese. Do not translate it.
 - TextJpVoice should preserve the original Japanese wording and line breaks,
   only inserting bracket tags like [sigh], [angry], [whisper], [short pause].
-- Voice tags may be free-form English descriptions, but keep them short and useful for TTS.
+- Voice tags support free-form natural-language English descriptions. The
+  provided examples are inspiration, not a whitelist. Invent precise tags when
+  they better express the intended delivery, while keeping them useful for TTS.
 - Be expressive enough for voice generation. Use script cues, punctuation,
   speaker personality, and local context to infer tone.
 - For character dialogue, prefer 1-3 tags when there is emotion, breath,
   hesitation, teasing, sarcasm, volume change, or a clear acting beat.
-- Very expressive or multi-beat lines may use up to 4 tags placed near the
-  relevant phrase, not only at the beginning.
+- Emotion tags MUST be placed at the very beginning of the sentence or phrase
+  they apply to. NEVER place an emotion tag at the end of a sentence. For
+  example: "[excited tone]大丈夫そうですね。" is correct, but
+  "大丈夫そうですね。[excited tone]" is strictly forbidden.
 - Calm one-sentence dialogue can use 0-1 tag. Do not tag every phrase.
-- TextJpVoice must only contain spoken dialogue, emotion tags, and basic punctuation.
-- Remove ALL decorative symbols that are not pronounced (e.g., "☆", "★", "♪", "♡", "♥", "！？？", "～") from TextJpVoice. Keep only standard grammatical punctuation (e.g., "。", "、", "！", "？", "……").
-- Remove non-spoken sound effects, actions, or parentheses like "（ズルッ）", "（ドサッッッ！！！）", or "（ガチャッ）" from TextJpVoice.
+- TextJpVoice must ONLY contain spoken dialogue, emotion tags, and basic punctuation.
+- Remove ALL decorative symbols that are not pronounced (e.g., "☆", "★",
+  "♪", "♡", "♥", "！？？", "～") from TextJpVoice. Keep only standard
+  grammatical punctuation (e.g., "。", "、", "！", "？", "……").
+- CRITICAL: Remove all non-spoken sound effects, actions, or onomatopoeia
+  enclosed in parentheses like "（ズルッ）", "（ドサッッッ！！！）", or
+  "（ガチャッ）" from TextJpVoice. Do NOT output
+  "[surprised]ふあっ！？[sigh]（ズルッ）"; it must be just
+  "[surprised]ふあっ！？".
+- Remove ALL other parenthetical content too, including explanations and
+  abbreviations such as "(SNP)". Parentheses and their contents must never
+  appear in TextJpVoice.
 - If a line contains NO spoken dialogue (e.g., only sound effects or actions), set TextJpVoice to an empty string "".
 - Return strict JSON only. No markdown.`;
 
@@ -168,7 +74,7 @@ Options:
   --batch-size <n>          target text units per LLM call, default: ${defaultBatchSize}
   --context-radius <n>      neighboring text units around each batch, default: ${defaultContextRadius}
   --limit <n>               process at most n target lines, useful for testing
-  --force                   reprocess lines that already have TextCn and TextJpVoice
+  --force                   reprocess lines that already have TextJpVoice
   --dry-run                 print plan without calling Vertex or writing
   --help, -h                show this help
 
@@ -335,12 +241,14 @@ function collectTextUnits(story) {
       textJp: String(unit.TextJp ?? ""),
       textCn: String(unit.TextCn ?? ""),
       textJpVoice: String(unit.TextJpVoice ?? ""),
+      hasTextJpVoice: Object.hasOwn(unit, "TextJpVoice"),
       scriptKr: String(unit.ScriptKr ?? ""),
       sound: String(unit.Sound ?? ""),
       bgmId: unit.BGMId || 0,
       bgName: unit.BGName || 0,
       popup: String(unit.PopupFileName ?? ""),
       speaker: inferSpeaker(unit),
+      speakerCandidates: inferSpeakerCandidates(unit),
       role: inferRole(unit),
     }))
     .filter(unit => unit.textJp.trim());
@@ -348,17 +256,9 @@ function collectTextUnits(story) {
 
 function inferSpeaker(unit) {
   const script = String(unit.ScriptKr ?? "");
-  const characterLine = script
-    .split("\n")
-    .map(line => line.trim())
-    .find(line => /^(?!#)[1-5];/.test(line));
-  if (characterLine) {
-    return characterLine.split(";")[1] || "";
-  }
-
-  const narration = /#na;([^;\n]+);?/i.exec(script);
-  if (narration?.[1]) {
-    return narration[1];
+  const { dialogueSpeaker } = parseScenarioScriptSpeakers(script);
+  if (dialogueSpeaker) {
+    return dialogueSpeaker;
   }
 
   if (/#title/i.test(script)) {
@@ -370,63 +270,36 @@ function inferSpeaker(unit) {
   return "";
 }
 
-function inferRole(unit) {
-  const script = String(unit.ScriptKr ?? "");
-  if (/#title/i.test(script)) return "title";
-  if (/#place/i.test(script)) return "place";
-  if (/#na/i.test(script)) return "narration";
-  if (/^(?!#)[1-5];/m.test(script)) return "dialogue";
-  return "text";
+function inferSpeakerCandidates(unit) {
+  return parseScenarioScriptSpeakers(unit).speakers;
 }
 
-function collectCharacters(textUnits) {
+function inferRole(unit) {
+  return inferScenarioRole(unit);
+}
+
+function collectCharacters(textUnits, resolvedRoster = new Map()) {
   const map = new Map();
   for (const unit of textUnits) {
-    for (const line of unit.scriptKr.split("\n")) {
-      const match = /^(?!#)([1-5]);([^;\n]+);([^;\n]+);?([^;\n]+)?/.exec(
-        line.trim()
-      );
-      if (!match) continue;
-      const name = match[2];
-      const glossaryEntry = findGlossaryEntryByKorean(name);
-      const record = map.get(name) || {
-        name,
-        zhName: glossaryEntry?.zh || "",
-        jaAliases: glossaryEntry?.ja || [],
-        koAliases: glossaryEntry?.ko || [],
-        appearances: 0,
-        firstIndex: unit.index,
-        sampleLines: [],
-      };
-      record.appearances++;
-      if (record.sampleLines.length < 3 && unit.textJp) {
-        record.sampleLines.push(unit.textJp.replace(/\n/g, " / "));
-      }
-      map.set(name, record);
+    const name = unit.speaker;
+    if (!name) continue;
+    const resolved = resolvedRoster.get(name);
+    const record = map.get(name) || {
+      name,
+      zhName: resolved?.translationName || "",
+      jaAliases: resolved?.jaAliases || [],
+      koAliases: resolved?.koAliases || [],
+      appearances: 0,
+      firstIndex: unit.index,
+      sampleLines: [],
+    };
+    record.appearances++;
+    if (record.sampleLines.length < 3 && unit.textJp) {
+      record.sampleLines.push(unit.textJp.replace(/\n/g, " / "));
     }
+    map.set(name, record);
   }
   return [...map.values()].sort((a, b) => a.firstIndex - b.firstIndex);
-}
-
-function findGlossaryEntryByKorean(name) {
-  return characterNameGlossary.find(entry => entry.ko.includes(name));
-}
-
-function buildTerminology() {
-  return {
-    rules: [
-      "When TextJp contains a Japanese name listed here, TextCn must use the exact zh value.",
-      "Honorifics may be localized naturally, e.g. さん as 同学/小姐 when appropriate.",
-      "Do not use forbiddenZh forms for the corresponding source name.",
-      "Speaker names in ScriptKr help identify who is talking, but do not force adding the speaker name to every line.",
-    ],
-    characterNames: characterNameGlossary.map(entry => ({
-      zh: entry.zh,
-      ja: entry.ja,
-      ko: entry.ko,
-      forbiddenZh: entry.forbiddenZh,
-    })),
-  };
 }
 
 function buildOutline(textUnits) {
@@ -471,10 +344,33 @@ function compactText(text, maxLength) {
   return `${normalized.slice(0, maxLength - 1)}…`;
 }
 
-function shouldProcess(unit, force) {
+function shouldProcess(unit, force, lockedIndices) {
   if (!unit.textJp.trim()) return false;
+  if (unit.role === "option") return false;
+  if (lockedIndices.has(unit.index)) return false;
   if (force) return true;
-  return !unit.textCn.trim() || !unit.textJpVoice.trim();
+  return !unit.hasTextJpVoice;
+}
+
+function removeRawImportVoicePlaceholders(story) {
+  if (
+    String(story.translator || "").includes("Gemini") ||
+    story.content.some(unit => String(unit.VoiceJp || "").trim())
+  ) {
+    return 0;
+  }
+
+  let removed = 0;
+  for (const unit of story.content) {
+    if (
+      Object.hasOwn(unit, "TextJpVoice") &&
+      !String(unit.TextJpVoice || "").trim()
+    ) {
+      delete unit.TextJpVoice;
+      removed++;
+    }
+  }
+  return removed;
 }
 
 function chunkArray(items, size) {
@@ -485,7 +381,14 @@ function chunkArray(items, size) {
   return chunks;
 }
 
-function buildPrompt({ story, textUnits, characters, outline, batch, context }) {
+function buildPrompt({
+  story,
+  textUnits,
+  characters,
+  outline,
+  batch,
+  context,
+}) {
   const storyTitle =
     textUnits.find(unit => unit.role === "title")?.textJp ||
     `Story ${story.GroupId}`;
@@ -494,8 +397,7 @@ function buildPrompt({ story, textUnits, characters, outline, batch, context }) 
   return JSON.stringify(
     {
       task: [
-        "Localize the target Blue Archive story lines into Simplified Chinese",
-        "and create Japanese TTS emotion-tag text.",
+        "Create Japanese TTS emotion-tag text for the target Blue Archive story lines.",
       ].join(" "),
       story: {
         groupId: story.GroupId,
@@ -504,10 +406,6 @@ function buildPrompt({ story, textUnits, characters, outline, batch, context }) 
         translator: story.translator || "",
       },
       styleGuide: {
-        textCn: [
-          "Natural Simplified Chinese, anime/light-novel dialogue tone,",
-          "keep humor and character voice, avoid literal machine translation.",
-        ].join(" "),
         textJpVoice: [
           "Original Japanese with inserted [tag] voice/emotion directions only.",
           "Keep Japanese wording intact. Use expressive but controlled tags.",
@@ -518,9 +416,11 @@ function buildPrompt({ story, textUnits, characters, outline, batch, context }) 
           "Very expressive lines can use up to 4 tags.",
           "Titles, places, and neutral narration usually get no tags.",
         ].join(" "),
+        tagVocabulary:
+          "Examples are not a whitelist. Use concise free-form English " +
+          "descriptions whenever they direct the performance more precisely.",
         voiceTagExamples,
       },
-      terminology: buildTerminology(),
       characters,
       globalOutline: outline,
       localContext: context,
@@ -529,6 +429,7 @@ function buildPrompt({ story, textUnits, characters, outline, batch, context }) 
         role: unit.role,
         speaker: unit.speaker,
         textJp: unit.textJp,
+        textCn: unit.textCn,
         scriptKr: unit.scriptKr,
         sound: unit.sound,
         bgmId: unit.bgmId,
@@ -539,7 +440,6 @@ function buildPrompt({ story, textUnits, characters, outline, batch, context }) 
           "Return one item for every targetLines entry, same index values, no extra or missing lines.",
         itemShape: {
           index: "number",
-          TextCn: "Simplified Chinese translation",
           TextJpVoice: "Japanese source text with bracket emotion tags",
         },
       },
@@ -559,10 +459,9 @@ function makeResponseSchema(Type) {
           type: Type.OBJECT,
           properties: {
             index: { type: Type.INTEGER },
-            TextCn: { type: Type.STRING },
             TextJpVoice: { type: Type.STRING },
           },
-          required: ["index", "TextCn", "TextJpVoice"],
+          required: ["index", "TextJpVoice"],
         },
       },
     },
@@ -622,48 +521,25 @@ function validateBatchResponse(parsed, batch) {
   }
 
   for (const item of parsed.items) {
-    if (typeof item.TextCn !== "string" || typeof item.TextJpVoice !== "string") {
+    if (typeof item.TextJpVoice !== "string") {
       throw new Error(`Invalid item payload for index ${item.index}`);
-    }
-    if (item.TextCn === undefined || item.TextCn === null || item.TextCn === "") {
-      throw new Error(`Empty TextCn for index ${item.index}`);
     }
     if (item.TextJpVoice === undefined || item.TextJpVoice === null) {
       throw new Error(`Missing TextJpVoice for index ${item.index}`);
     }
-    validateTerminology(item, batch);
   }
 
   return parsed.items;
 }
 
-function validateTerminology(item, batch) {
-  const sourceUnit = batch.find(unit => unit.index === item.index);
-  if (!sourceUnit) return;
-
-  for (const entry of characterNameGlossary) {
-    const mentionedInJp = entry.ja.some(alias => sourceUnit.textJp.includes(alias));
-    if (!mentionedInJp) {
-      continue;
-    }
-
-    if (!item.TextCn.includes(entry.zh)) {
-      throw new Error(
-        `TextCn for index ${item.index} must use ${entry.zh} for ${entry.ja.join("/")}`
-      );
-    }
-
-    for (const forbidden of entry.forbiddenZh) {
-      if (item.TextCn.includes(forbidden)) {
-        throw new Error(
-          `TextCn for index ${item.index} used forbidden name ${forbidden}; use ${entry.zh}`
-        );
-      }
-    }
-  }
-}
-
-async function generateBatch(ai, Type, args, prompt, batch, retryContext = "") {
+async function generateBatch(
+  ai,
+  Type,
+  args,
+  prompt,
+  batch,
+  retryContext = "",
+) {
   const responseSchema = makeResponseSchema(Type);
   const contents = retryContext
     ? `${prompt}\n\nPrevious response validation error:\n${retryContext}\nRegenerate the full JSON batch.`
@@ -674,7 +550,6 @@ async function generateBatch(ai, Type, args, prompt, batch, retryContext = "") {
     contents,
     config: {
       systemInstruction,
-      temperature: 0.35,
       responseMimeType: "application/json",
       responseSchema,
     },
@@ -683,6 +558,21 @@ async function generateBatch(ai, Type, args, prompt, batch, retryContext = "") {
   const responseText = extractResponseText(response);
   const parsed = parseJsonResponse(responseText);
   return validateBatchResponse(parsed, batch);
+}
+
+async function resolveCharacterRoster(textUnits) {
+  return resolveStoryCharacterRoster(
+    textUnits
+      .filter(
+        unit =>
+          unit.speaker &&
+          !["title", "place"].includes(unit.speaker),
+      )
+      .map(unit => ({
+        speaker: unit.speaker,
+        speakerCandidates: unit.speakerCandidates,
+      })),
+  );
 }
 
 async function main() {
@@ -705,16 +595,28 @@ async function main() {
     throw new Error("Story JSON must have a content array");
   }
 
-  // Update translator signature to reflect AI and human collaboration
-  story.translator = "ba-l10n × Gemini × rikaaa0928";
+  const removedVoicePlaceholders = removeRawImportVoicePlaceholders(story);
+  if (removedVoicePlaceholders > 0) {
+    console.log(
+      `Removed ${removedVoicePlaceholders} empty raw TextJpVoice placeholders`,
+    );
+  }
 
+  const lockedOverrideIndices = applyStoryTextJpVoiceOverrides(
+    String(story.GroupId),
+    story.content,
+  );
   const textUnits = collectTextUnits(story);
-  let targets = textUnits.filter(unit => shouldProcess(unit, args.force));
+  let targets = textUnits.filter(unit =>
+    shouldProcess(unit, args.force, lockedOverrideIndices),
+  );
   if (args.limit > 0) {
     targets = targets.slice(0, args.limit);
   }
 
   const batches = chunkArray(targets, args.batchSize);
+  const roster = await resolveCharacterRoster(textUnits);
+  const characters = collectCharacters(textUnits, roster);
   const plan = {
     storyPath,
     outputPath,
@@ -724,7 +626,12 @@ async function main() {
     totalTextUnits: textUnits.length,
     targetUnits: targets.length,
     batches: batches.length,
+    resolvedCharacters: characters.map(character => ({
+      speaker: character.name,
+      characterName: character.zhName,
+    })),
     force: args.force,
+    lockedOverrideIndices: [...lockedOverrideIndices],
   };
 
   if (args.dryRun) {
@@ -746,7 +653,6 @@ async function main() {
     location: resolveLocation(args),
   });
 
-  const characters = collectCharacters(textUnits);
   const outline = buildOutline(textUnits);
 
   console.log(JSON.stringify(plan, null, 2));
@@ -774,7 +680,14 @@ async function main() {
     let lastError = "";
     for (let attempt = 1; attempt <= 3; attempt++) {
       try {
-        items = await generateBatch(ai, Type, args, prompt, batch, lastError);
+        items = await generateBatch(
+          ai,
+          Type,
+          args,
+          prompt,
+          batch,
+          lastError,
+        );
         break;
       } catch (error) {
         lastError = error.message;
@@ -791,8 +704,12 @@ async function main() {
 
     for (const item of items) {
       const unit = story.content[item.index];
-      unit.TextCn = item.TextCn.trim();
-      unit.TextJpVoice = item.TextJpVoice.trim();
+      // Enforce the no-parentheses contract in code instead of trusting model
+      // output alone.
+      unit.TextJpVoice = normalizeTextJpVoice(item.TextJpVoice);
+      if (!unit.TextJpVoice) {
+        unit.VoiceJp = "";
+      }
     }
 
     fs.mkdirSync(path.dirname(outputPath), { recursive: true });

@@ -136,7 +136,7 @@ const routes: Array<RouteRecordRaw> = [
         path: "/eventStory",
         name: "EventStory",
         meta: {
-          shouldShowInNav: false,
+          shouldShowInNav: true,
           navOrder: 4,
           m17n: [
             { lang: "cn", title: "活动剧情" },
@@ -148,6 +148,16 @@ const routes: Array<RouteRecordRaw> = [
           ],
         },
         component: () => import("../components/EventStoryHome.vue"),
+        children: [
+          {
+            path: ":id",
+            name: "EventStoryDetails",
+            meta: {
+              shouldShowInNav: false,
+            },
+            component: () => import("../components/StoryViewer.vue"),
+          },
+        ],
       },
       // {
       //   path: '/miniStory',
@@ -171,7 +181,7 @@ const routes: Array<RouteRecordRaw> = [
         name: "GroupStory",
         meta: {
           shouldShowInNav: true,
-          navOrder: 4,
+          navOrder: 5,
           m17n: [
             { lang: "cn", title: "社团剧情" },
             { lang: "tw", title: "社團劇情" },

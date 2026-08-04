@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 2,
+  "source": {
+    "storyPath": "public/story/event/10014/10014070.json",
+    "contentLength": 166,
+    "scanDigest": "sha256:95baa51584d54cc35938b1b0b786f74ea9cf40f14f853f57eefb894f8779ce68"
+  },
+  "lines": [
+    {
+      "storyIndex": 30,
+      "kind": "unknown-speaker",
+      "status": "ready",
+      "expected": {
+        "speaker": "???",
+        "scriptKr": "#na;???;……그런 거 치곤 목소리에 힘이 없네.",
+        "ttsText": "[cool tone] [matter-of-fact] ……その割には、声に覇気がないね。"
+      },
+      "resolution": "character",
+      "resolvedSpeaker": "카즈사",
+      "evidence": "Reisa recognizes the familiar Caspalug voice, and the subsequent reveal and dialogue identify Kazusa."
+    },
+    {
+      "storyIndex": 33,
+      "kind": "unknown-speaker",
+      "status": "ready",
+      "expected": {
+        "speaker": "???",
+        "scriptKr": "#na;???;그러니까 계속 말했잖아. 너무 세 보이는 말만 쓰면 오히려 약해 보인다고. 사람이 말을 해주면 좀 기억해.",
+        "ttsText": "[sigh] [sarcastic] だから前にも言ったじゃん。\nしつこすぎるのは微妙だって。人の話、ちゃんと覚えてよ。"
+      },
+      "resolution": "character",
+      "resolvedSpeaker": "카즈사",
+      "evidence": "Reisa recognizes the familiar Caspalug voice, and the subsequent reveal and dialogue identify Kazusa."
+    }
+  ]
+}

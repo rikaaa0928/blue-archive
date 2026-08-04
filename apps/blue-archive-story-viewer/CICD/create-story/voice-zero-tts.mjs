@@ -1,7 +1,17 @@
 import childProcess from "child_process";
+import crypto from "crypto";
 import fs from "fs";
 import path from "path";
 import url from "url";
+import {
+  attachLocalCharacterResources,
+  resolveStoryCharacterRoster,
+} from "./ba-character-catalog.mjs";
+import {
+  isAnonymousScenarioSpeaker,
+  isUnknownScenarioSpeaker,
+  parseScenarioScriptSpeakers,
+} from "./scenario-script-speakers.mjs";
 
 const __dirname = path.dirname(url.fileURLToPath(import.meta.url));
 const appRoot = path.resolve(__dirname, "..", "..");
@@ -9,27 +19,24 @@ const repoRoot = path.resolve(appRoot, "..", "..");
 loadEnvFile(path.join(appRoot, ".env"));
 loadEnvFile(path.join(repoRoot, ".env"));
 
-const defaultDownloaderOutput =
-  "/Users/rikaaa0928/src/yling/ai/skill/ba-video-generator-v3/ba-downloader/output";
-const defaultDownloaderScript =
-  "/Users/rikaaa0928/src/yling/ai/skill/ba-video-generator-v3/ba-downloader/download.py";
+const defaultCharacterRoot = path.resolve(appRoot, ".local-files", "ba-characters");
 const defaultTtsBaseUrl = "https://yiling.top/api/tts";
 const defaultModel = "zerotts-v1";
-const localUrlPrefix = "/api/local-files";
+const npcSpeakerKey = "__anonymous_npc__";
+const npcReferenceCharacterName = "NPC Neutral Raw Experiment v4";
+const npcReferenceDirectoryName = "npc-neutral-v4";
+const npcAudioEffectVersion = "v4-heavy-jitter-1";
+const collectiveConfigRoot = path.join(
+  __dirname,
+  "config",
+  "collective-voices",
+);
+const collectiveMixVersion = "collective-v1";
 
 const flatStoryTypes = new Set(["main", "other"]);
 const nestedStoryTypes = new Set(["favor", "event", "group", "mini"]);
 const audioExtensions = new Set([".flac", ".m4a", ".mp3", ".ogg", ".opus", ".wav"]);
 const terminalTaskStatuses = new Set(["COMPLETED", "FAILED", "CANCELLED"]);
-const defaultSpeakerMap = {
-  "준코": "淳子",
-  "아카리": "明里",
-  "하루나": "晴奈",
-  "이즈미": "泉",
-  "히나": "日奈",
-  "치나츠": "千夏",
-  "이오리": "伊织",
-};
 
 function loadEnvFile(envPath) {
   if (!fs.existsSync(envPath)) {
@@ -69,18 +76,16 @@ Stages:
   --stage prepare           prepare local reference audio only, default
   --stage upload            prepare and upload reference voices
   --stage tasks             upload references and create TTS tasks
-  --stage poll              poll existing tasks, download mp3, update VoiceJp
+  --stage poll              poll existing tasks and download mp3
   --stage all               prepare, upload, create tasks, poll until done
 
 Options:
   --type <type>             story type when source is an id, default: group
   --directory-id <id>       directory id for favor/event/group/mini
-  --output <file>           story JSON to write, default: overwrite source
   --manifest <file>         workflow manifest path, default under .local-files
-  --downloader-output <dir> ba-downloader output dir
-  --downloader-script <file> existing Python downloader script
-  --local-file-root <dir>   local file service root, default: .local-files
-  --speaker-map <file>      JSON object mapping script speaker to character dir
+  --character-root <dir>    local character reference resource root
+  --local-file-root <dir>   local audio and manifest root, default: .local-files
+  --speaker-map <file>      exceptional CharacterName-to-local-directory override
   --model <model>           ZeroTTS model, default: ${defaultModel}
   --tts-base-url <url>      ZeroTTS base url, default: ${defaultTtsBaseUrl}
   --chunk-length <n>        ZeroTTS chunkLength, default: 300
@@ -93,19 +98,23 @@ Options:
   --reference-min-clip <n>  min seconds for each selected reference clip, default: 5
   --reference-gap <n>       silence seconds inserted between reference clips, default: 0.8
   --force                   recreate references/tasks and overwrite downloaded audio
-  --download-missing        call existing Python downloader when a character is missing
-  --dry-run                 print plan without network calls or writing story JSON
+  --changed-only            process only lines changed since their last R2 publish
+  --missing-only            process only voice lines whose VoiceJp is empty
+  --regenerate-collective-member <speaker>
+                            recreate only this member in matching collective lines
+  --dry-run                 print plan without network calls or local writes
   --help, -h                show this help
 
 Environment:
   ZERO_TTS_API_KEY / OZX_TTS_API_KEY / YILING_TTS_API_TOKEN
   ZERO_TTS_BASE_URL
-  BA_DOWNLOADER_OUTPUT
+  BA_CHARACTER_RESOURCE_ROOT
   BA_LOCAL_FILE_ROOT
 
 Examples:
   pnpm voice-zero-tts 1101 --type group --stage prepare
   pnpm voice-zero-tts 1101 --type group --stage all --limit 3
+  pnpm voice-zero-tts 1101 --type group --stage all --changed-only
 `);
 }
 
@@ -114,10 +123,9 @@ function parseArgs(argv) {
     source: "",
     type: "group",
     directoryId: "",
-    output: "",
     manifest: "",
-    downloaderOutput: process.env.BA_DOWNLOADER_OUTPUT || defaultDownloaderOutput,
-    downloaderScript: process.env.BA_DOWNLOADER_SCRIPT || defaultDownloaderScript,
+    characterRoot:
+      process.env.BA_CHARACTER_RESOURCE_ROOT || defaultCharacterRoot,
     localFileRoot:
       process.env.BA_LOCAL_FILE_ROOT || path.resolve(appRoot, ".local-files"),
     speakerMap: "",
@@ -134,7 +142,9 @@ function parseArgs(argv) {
     referenceMinClip: 5,
     referenceGap: 0.8,
     force: false,
-    downloadMissing: false,
+    changedOnly: false,
+    missingOnly: false,
+    regenerateCollectiveMember: "",
     dryRun: false,
     help: false,
   };
@@ -149,17 +159,11 @@ function parseArgs(argv) {
       case "--directory-id":
         args.directoryId = readOptionValue(argv, ++index, arg);
         break;
-      case "--output":
-        args.output = readOptionValue(argv, ++index, arg);
-        break;
       case "--manifest":
         args.manifest = readOptionValue(argv, ++index, arg);
         break;
-      case "--downloader-output":
-        args.downloaderOutput = readOptionValue(argv, ++index, arg);
-        break;
-      case "--downloader-script":
-        args.downloaderScript = readOptionValue(argv, ++index, arg);
+      case "--character-root":
+        args.characterRoot = readOptionValue(argv, ++index, arg);
         break;
       case "--local-file-root":
         args.localFileRoot = readOptionValue(argv, ++index, arg);
@@ -206,8 +210,14 @@ function parseArgs(argv) {
       case "--force":
         args.force = true;
         break;
-      case "--download-missing":
-        args.downloadMissing = true;
+      case "--changed-only":
+        args.changedOnly = true;
+        break;
+      case "--missing-only":
+        args.missingOnly = true;
+        break;
+      case "--regenerate-collective-member":
+        args.regenerateCollectiveMember = readOptionValue(argv, ++index, arg);
         break;
       case "--dry-run":
         args.dryRun = true;
@@ -293,6 +303,229 @@ function storyIdFromPath(storyPath) {
   return path.basename(storyPath, ".json");
 }
 
+function effectiveTtsText(unit) {
+  return unit.TextJpVoice !== undefined && unit.TextJpVoice !== null
+    ? String(unit.TextJpVoice).trim()
+    : String(unit.TextJp || "").trim();
+}
+
+function collectiveScanDigest(story) {
+  const rows = story.content.map(unit => [
+    String(unit.ScriptKr ?? ""),
+    effectiveTtsText(unit),
+  ]);
+  return `sha256:${textHash(JSON.stringify(rows))}`;
+}
+
+function resolveCollectiveConfigPath(storyPath) {
+  const publicStoryRoot = path.join(appRoot, "public", "story");
+  const relativePath = path.relative(publicStoryRoot, storyPath);
+  if (
+    relativePath.startsWith(`..${path.sep}`) ||
+    path.isAbsolute(relativePath)
+  ) {
+    throw new Error(
+      "Collective voice config requires a story under public/story: " +
+        storyPath,
+    );
+  }
+  return {
+    configPath: path.join(collectiveConfigRoot, relativePath),
+    relativeStoryPath: path.join("public", "story", relativePath)
+      .split(path.sep)
+      .join("/"),
+  };
+}
+
+function loadCollectiveVoiceConfig(storyPath, story) {
+  const { configPath, relativeStoryPath } =
+    resolveCollectiveConfigPath(storyPath);
+  if (!fs.existsSync(configPath)) {
+    throw new Error(
+      `Missing voice review config: ${configPath}. ` +
+        "Read COLLECTIVE_VOICE_CONFIG.md before running TTS.",
+    );
+  }
+
+  const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
+  if (config.schemaVersion !== 2) {
+    throw new Error(
+      `Unsupported voice review schemaVersion in ${configPath}: ` +
+        `${config.schemaVersion}`,
+    );
+  }
+  if (config.source?.storyPath !== relativeStoryPath) {
+    throw new Error(
+      `Voice review storyPath mismatch in ${configPath}: expected ` +
+        `${relativeStoryPath}`,
+    );
+  }
+  if (config.source?.contentLength !== story.content.length) {
+    throw new Error(
+      `Voice review contentLength mismatch in ${configPath}; ` +
+        "review the complete story again",
+    );
+  }
+  const currentDigest = collectiveScanDigest(story);
+  if (config.source?.scanDigest !== currentDigest) {
+    throw new Error(
+      `Voice review scanDigest mismatch in ${configPath}; ` +
+        "review the complete story again",
+    );
+  }
+  if (!Array.isArray(config.lines)) {
+    throw new Error(`Voice review lines must be an array: ${configPath}`);
+  }
+
+  const linesByIndex = new Map();
+  let previousIndex = -1;
+  for (const entry of config.lines) {
+    const index = entry?.storyIndex;
+    if (!Number.isSafeInteger(index) || index < 0 || index >= story.content.length) {
+      throw new Error(
+        `Invalid reviewed storyIndex ${index} in ${configPath}`,
+      );
+    }
+    if (index <= previousIndex) {
+      throw new Error(
+        `Reviewed lines must have unique ascending storyIndex values: ${configPath}`,
+      );
+    }
+    previousIndex = index;
+    if (!["collective", "unknown-speaker"].includes(entry.kind)) {
+      throw new Error(
+        `Reviewed line ${index} must use kind=collective or ` +
+          "kind=unknown-speaker",
+      );
+    }
+    if (entry.status !== "ready") {
+      throw new Error(
+        `Reviewed line ${index} is ${entry.status || "unreviewed"}; ` +
+          "finish the LLM review before TTS",
+      );
+    }
+
+    const unit = story.content[index];
+    const speaker = parseScenarioScriptSpeakers(unit).dialogueSpeaker;
+    const expected = entry.expected || {};
+    if (
+      expected.speaker !== speaker ||
+      expected.scriptKr !== String(unit.ScriptKr ?? "") ||
+      expected.ttsText !== effectiveTtsText(unit)
+    ) {
+      throw new Error(
+        `Reviewed line ${index} no longer matches its expected fields in ` +
+          configPath,
+      );
+    }
+    if (!expected.ttsText) {
+      throw new Error(`Reviewed line ${index} has empty TTS text`);
+    }
+
+    if (entry.kind === "collective") {
+      if (!Array.isArray(entry.members) || entry.members.length < 2) {
+        throw new Error(`Collective line ${index} requires at least two members`);
+      }
+      const members = entry.members.map(member => String(member).trim());
+      if (
+        members.some(member => !member) ||
+        new Set(members).size !== members.length
+      ) {
+        throw new Error(
+          `Collective line ${index} has empty or duplicate members`,
+        );
+      }
+      const memberOverrides = entry.mix?.memberOverrides || {};
+      for (const [member, override] of Object.entries(memberOverrides)) {
+        if (!members.includes(member)) {
+          throw new Error(
+            `Collective line ${index} has a mix override for non-member ${member}`,
+          );
+        }
+        for (const field of ["delayMs", "gainDb"]) {
+          if (
+            override?.[field] !== undefined &&
+            !Number.isFinite(Number(override[field]))
+          ) {
+            throw new Error(
+              `Collective line ${index} ${member}.${field} must be numeric`,
+            );
+          }
+        }
+      }
+      linesByIndex.set(index, {
+        ...entry,
+        members,
+        expected: { ...expected },
+      });
+      continue;
+    }
+
+    if (!isUnknownScenarioSpeaker(speaker)) {
+      throw new Error(
+        `Unknown-speaker line ${index} must point to a ??? dialogue`,
+      );
+    }
+    if (!["character", "anonymous"].includes(entry.resolution)) {
+      throw new Error(
+        `Unknown-speaker line ${index} requires resolution=character or ` +
+          "resolution=anonymous",
+      );
+    }
+    const resolvedSpeaker = String(entry.resolvedSpeaker || "").trim();
+    if (!resolvedSpeaker || isUnknownScenarioSpeaker(resolvedSpeaker)) {
+      throw new Error(
+        `Unknown-speaker line ${index} requires a concrete resolvedSpeaker`,
+      );
+    }
+    if (
+      entry.resolution === "character" &&
+      isAnonymousScenarioSpeaker(resolvedSpeaker)
+    ) {
+      throw new Error(
+        `Unknown-speaker line ${index} resolves to anonymous speaker ` +
+          `${resolvedSpeaker}; use resolution=anonymous`,
+      );
+    }
+    if (
+      entry.resolution === "anonymous" &&
+      !isAnonymousScenarioSpeaker(resolvedSpeaker)
+    ) {
+      throw new Error(
+        `Unknown-speaker line ${index} resolves to named character ` +
+          `${resolvedSpeaker}; use resolution=character`,
+      );
+    }
+    const evidence = String(entry.evidence || "").trim();
+    if (!evidence) {
+      throw new Error(
+        `Unknown-speaker line ${index} requires non-empty evidence`,
+      );
+    }
+    linesByIndex.set(index, {
+      ...entry,
+      resolvedSpeaker,
+      evidence,
+      expected: { ...expected },
+    });
+  }
+
+  for (let index = 0; index < story.content.length; index++) {
+    const unit = story.content[index];
+    if (!effectiveTtsText(unit)) continue;
+    if (!isUnknownScenarioSpeaker(
+      parseScenarioScriptSpeakers(unit).dialogueSpeaker,
+    )) continue;
+    if (linesByIndex.get(index)?.kind === "unknown-speaker") continue;
+    throw new Error(
+      `Missing unknown-speaker review for ??? dialogue at storyIndex ` +
+        `${index} in ${configPath}; finish the LLM review before TTS`,
+    );
+  }
+
+  return { configPath, config, linesByIndex };
+}
+
 function resolveManifestPath(args, storyId) {
   if (args.manifest) {
     return path.resolve(process.cwd(), args.manifest);
@@ -306,59 +539,138 @@ function resolveManifestPath(args, storyId) {
   );
 }
 
-function loadSpeakerMap(args) {
-  if (!args.speakerMap) {
-    return defaultSpeakerMap;
+async function loadSpeakerMap(args, story, collectiveConfig) {
+  const configured = args.speakerMap
+    ? JSON.parse(fs.readFileSync(path.resolve(args.speakerMap), "utf8"))
+    : {};
+  const overrides = configured;
+  const references = [];
+  for (let index = 0; index < story.content.length; index++) {
+    const unit = story.content[index];
+    const text = effectiveTtsText(unit);
+    if (!text) continue;
+    if (args.missingOnly && String(unit.VoiceJp || "").trim()) continue;
+    if (collectiveConfig.linesByIndex.has(index)) continue;
+    const parsedSpeakers = parseScenarioScriptSpeakers(unit);
+    const speakerCandidates = parsedSpeakers.speakers;
+    const speaker = parsedSpeakers.dialogueSpeaker;
+    if (!speaker || isAnonymousScenarioSpeaker(speaker)) continue;
+    references.push({
+      speaker,
+      speakerCandidates,
+    });
   }
-  const parsed = JSON.parse(fs.readFileSync(path.resolve(args.speakerMap), "utf8"));
-  return { ...defaultSpeakerMap, ...parsed };
+  for (const entry of collectiveConfig.linesByIndex.values()) {
+    if (
+      args.missingOnly &&
+      String(story.content[entry.storyIndex]?.VoiceJp || "").trim()
+    ) {
+      continue;
+    }
+    if (entry.kind === "collective") {
+      for (const member of entry.members) {
+        references.push({ speaker: member, speakerCandidates: [member] });
+      }
+    } else if (entry.resolution === "character") {
+      references.push({
+        speaker: entry.resolvedSpeaker,
+        speakerCandidates: [entry.resolvedSpeaker],
+      });
+    }
+  }
+
+  const playerRoster = await resolveStoryCharacterRoster(references);
+  const roster = attachLocalCharacterResources(
+    playerRoster,
+    path.resolve(args.characterRoot),
+    overrides,
+  );
+  const speakerMap = {};
+  for (const [speaker, character] of roster) {
+    speakerMap[speaker] = character.characterName;
+    console.log(
+      `Resolved player speaker ${speaker} -> ${character.translationName} ` +
+        `(xxhash=${character.characterId}); ` +
+        `local resource=${character.characterDirectory}`,
+    );
+  }
+  return speakerMap;
 }
 
-function extractVoiceLines(story, speakerMap, limit) {
+function extractVoiceLines(story, speakerMap, collectiveConfig, limit) {
   const lines = [];
   for (let index = 0; index < story.content.length; index++) {
     const unit = story.content[index];
-    
+
     // 如果 LLM 判定这句没有台词并将 TextJpVoice 明确设为 ""，就不再回退到包含拟声词的 TextJp
-    let text = "";
-    if (unit.TextJpVoice !== undefined && unit.TextJpVoice !== null) {
-      text = String(unit.TextJpVoice).trim();
-    } else {
-      text = String(unit.TextJp || "").trim();
-    }
-    
+    const text = effectiveTtsText(unit);
+
     if (!text) continue;
 
-    const speakers = inferSpeakers(unit);
-    if (speakers.length === 0) continue;
+    const parsedSpeakers = parseScenarioScriptSpeakers(unit);
+    const speakers = parsedSpeakers.speakers;
+    const dialogueSpeaker = parsedSpeakers.dialogueSpeaker;
+    if (!dialogueSpeaker) continue;
 
-    const speaker = speakers[0];
+    const reviewed = collectiveConfig.linesByIndex.get(index);
+    if (reviewed?.kind === "collective") {
+      lines.push({
+        kind: "collective",
+        index,
+        speaker: dialogueSpeaker,
+        sourceSpeaker: dialogueSpeaker,
+        characterName: dialogueSpeaker,
+        text,
+        textCn: String(unit.TextCn || ""),
+        scriptKr: String(unit.ScriptKr || ""),
+        members: reviewed.members.map(member => ({
+          speaker: member,
+          characterName: speakerMap[member] || member,
+        })),
+        mix: reviewed.mix || {},
+      });
+      continue;
+    }
+
+    if (reviewed?.kind === "unknown-speaker") {
+      const anonymous = reviewed.resolution === "anonymous";
+      const speaker = anonymous ? npcSpeakerKey : reviewed.resolvedSpeaker;
+      lines.push({
+        kind: anonymous ? "anonymous" : "resolved-speaker",
+        index,
+        speaker,
+        sourceSpeaker: dialogueSpeaker,
+        resolvedSpeaker: reviewed.resolvedSpeaker,
+        characterName: anonymous
+          ? npcReferenceCharacterName
+          : speakerMap[speaker] || speaker,
+        text,
+        textCn: String(unit.TextCn || ""),
+        scriptKr: String(unit.ScriptKr || ""),
+        extraSpeakers: speakers.filter(candidate => candidate !== speaker),
+      });
+      continue;
+    }
+
+    const anonymous = isAnonymousScenarioSpeaker(dialogueSpeaker);
+    const speaker = anonymous ? npcSpeakerKey : dialogueSpeaker;
     lines.push({
       index,
       speaker,
-      characterName: speakerMap[speaker] || speaker,
+      sourceSpeaker: dialogueSpeaker,
+      characterName: anonymous
+        ? npcReferenceCharacterName
+        : speakerMap[speaker] || speaker,
       text,
       textCn: String(unit.TextCn || ""),
       scriptKr: String(unit.ScriptKr || ""),
-      existingVoiceJp: String(unit.VoiceJp || ""),
-      extraSpeakers: speakers.slice(1),
+      extraSpeakers: speakers.filter(candidate => candidate !== speaker),
     });
   }
 
   return limit > 0 ? lines.slice(0, limit) : lines;
 }
 
-function inferSpeakers(unit) {
-  const script = String(unit.ScriptKr || "");
-  const speakers = [];
-  for (const line of script.split("\n")) {
-    const match = /^(?!#)([1-5]);([^;\n]+);/.exec(line.trim());
-    if (match && !speakers.includes(match[2])) {
-      speakers.push(match[2]);
-    }
-  }
-  return speakers;
-}
 
 function loadManifest(manifestPath) {
   if (!fs.existsSync(manifestPath)) {
@@ -375,19 +687,50 @@ function saveManifest(manifestPath, manifest) {
   fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
 }
 
-function buildManifestBase(args, storyPath, outputPath, storyId, voiceLines) {
+function buildManifestBase(args, storyPath, storyId, voiceLines) {
   return {
     storyId,
     storyType: args.type,
     storyPath,
-    outputPath,
     localFileRoot: path.resolve(args.localFileRoot),
-    localUrlPrefix,
     ttsBaseUrl: args.ttsBaseUrl.replace(/\/+$/, ""),
     model: args.model,
     createdAt: new Date().toISOString(),
     voiceLineCount: voiceLines.length,
   };
+}
+
+function textHash(text) {
+  return crypto.createHash("sha256").update(String(text)).digest("hex");
+}
+
+function taskGeneratedText(task) {
+  return String(task?.generatedText ?? task?.text ?? "");
+}
+
+function taskPublishedText(task, storyUnit) {
+  if (typeof task?.publishedText === "string") {
+    return task.publishedText;
+  }
+  if (task?.publishedTaskId && task.needsPublish !== true) {
+    return String(task.text ?? "");
+  }
+  if (
+    task?.status === "COMPLETED" &&
+    task.needsPublish !== true &&
+    String(storyUnit?.VoiceJp ?? "").trim()
+  ) {
+    return taskGeneratedText(task);
+  }
+  return null;
+}
+
+function isChangedSincePublish(line, task, storyUnit) {
+  const publishedText = taskPublishedText(task, storyUnit);
+  return publishedText === null ||
+    publishedText !== line.text ||
+    String(task?.speaker || "") !== line.speaker ||
+    String(task?.kind || "") !== String(line.kind || "");
 }
 
 function slugify(value) {
@@ -450,6 +793,10 @@ function scoreReferenceCandidate(baseName, duration, text) {
 }
 
 function selectReferenceClips(candidates, args) {
+  if (candidates.length === 0) {
+    throw new Error("No usable reference clips found");
+  }
+
   const selected = [];
   const usedCategories = new Set();
   let totalDuration = 0;
@@ -499,53 +846,59 @@ function getAudioDuration(audioPath) {
   return Number.isFinite(duration) ? duration : 0;
 }
 
-function prepareReferenceAudio({ args, storyId, speaker, characterName, manifest }) {
+function prepareReferenceAudio({ args, speaker, characterName, manifest }) {
+  if (speaker === npcSpeakerKey) {
+    return prepareNpcReferenceAudio({ args, speaker, characterName, manifest });
+  }
+
   const referenceKey = speaker;
   const existing = manifest.references[referenceKey];
-  if (existing?.audioPath && fs.existsSync(existing.audioPath) && !args.force) {
-    return existing;
-  }
-
-  const characterDir = path.join(args.downloaderOutput, characterName);
-  if (!fs.existsSync(characterDir)) {
-    if (!args.downloadMissing || args.dryRun) {
-      throw new Error(
-        `Missing downloader output for ${speaker} -> ${characterName}: ${characterDir}`
-      );
-    }
-    downloadMissingCharacter(args, characterName);
-    if (!fs.existsSync(characterDir)) {
-      throw new Error(
-        `Downloader finished but output is still missing: ${characterDir}`
-      );
-    }
-  }
-
-  const candidates = scanVoiceCandidates(characterDir, args);
-  const clips = selectReferenceClips(candidates, args);
   const speakerSlug = slugify(`${speaker}_${characterName}`);
   const outputDir = path.join(
     args.localFileRoot,
     "tts",
-    args.type,
-    storyId,
     "references",
-    speakerSlug
+    speakerSlug,
   );
   const audioPath = path.join(outputDir, "reference.mp3");
   const textPath = path.join(outputDir, "reference.txt");
-  const manifestPath = path.join(outputDir, "reference-manifest.json");
+  const referenceManifestPath = path.join(outputDir, "reference-manifest.json");
+
+  if (
+    !args.force &&
+    fs.existsSync(audioPath) &&
+    fs.existsSync(textPath) &&
+    fs.existsSync(referenceManifestPath)
+  ) {
+    const cached = JSON.parse(fs.readFileSync(referenceManifestPath, "utf8"));
+    manifest.references[referenceKey] = {
+      ...existing,
+      ...cached,
+      speaker,
+      characterName,
+      audioPath,
+      textPath,
+      referenceText: fs.readFileSync(textPath, "utf8").trim(),
+    };
+    return manifest.references[referenceKey];
+  }
+
+  const characterDir = path.join(args.characterRoot, characterName);
+  if (!fs.existsSync(characterDir)) {
+    throw new Error(
+      `Missing local character resources for ${speaker} -> ` +
+        `${characterName}: ${characterDir}`,
+    );
+  }
+
+  const candidates = scanVoiceCandidates(characterDir, args);
+  const clips = selectReferenceClips(candidates, args);
   const referenceText = clips.map(clip => clip.text).join("\n\n");
-  const audioUrl = toLocalUrl(args.localFileRoot, audioPath);
 
   if (!args.dryRun) {
     fs.mkdirSync(outputDir, { recursive: true });
     concatenateAudio(clips, audioPath, args.referenceGap);
     fs.writeFileSync(textPath, `${referenceText}\n`);
-    fs.writeFileSync(
-      manifestPath,
-      `${JSON.stringify({ speaker, characterName, clips }, null, 2)}\n`
-    );
   }
 
   const totalDuration = clips.reduce((sum, clip) => sum + clip.duration, 0);
@@ -554,7 +907,6 @@ function prepareReferenceAudio({ args, storyId, speaker, characterName, manifest
     speaker,
     characterName,
     audioPath,
-    audioUrl,
     textPath,
     referenceText,
     totalDuration: Number((totalDuration + gapDuration).toFixed(3)),
@@ -566,6 +918,12 @@ function prepareReferenceAudio({ args, storyId, speaker, characterName, manifest
       text: clip.text,
     })),
   };
+  if (!args.dryRun) {
+    fs.writeFileSync(
+      referenceManifestPath,
+      `${JSON.stringify(prepared, null, 2)}\n`,
+    );
+  }
   manifest.references[referenceKey] = {
     ...existing,
     ...prepared,
@@ -573,26 +931,45 @@ function prepareReferenceAudio({ args, storyId, speaker, characterName, manifest
   return manifest.references[referenceKey];
 }
 
-function downloadMissingCharacter(args, characterName) {
-  if (!fs.existsSync(args.downloaderScript)) {
-    throw new Error(`Downloader script not found: ${args.downloaderScript}`);
+function prepareNpcReferenceAudio({ args, speaker, characterName, manifest }) {
+  const referenceDir = path.join(
+    path.resolve(args.localFileRoot),
+    "tts",
+    "references",
+    npcReferenceDirectoryName,
+  );
+  const audioPath = path.join(referenceDir, "reference.mp3");
+  const textPath = path.join(referenceDir, "reference.txt");
+  if (!fs.existsSync(audioPath) || !fs.existsSync(textPath)) {
+    throw new Error(
+      `Missing NPC reference files: ${audioPath} and ${textPath}`,
+    );
   }
 
-  console.log(`Downloading missing character resources: ${characterName}`);
-  childProcess.execFileSync(
-    "uv",
-    [
-      "run",
-      args.downloaderScript,
-      characterName,
-      "--output",
-      path.resolve(args.downloaderOutput),
+  const existing = manifest.references[speaker];
+  const referenceText = fs.readFileSync(textPath, "utf8").trim();
+  const totalDuration = Number(getAudioDuration(audioPath).toFixed(3));
+  const prepared = {
+    ...existing,
+    speaker,
+    characterName,
+    audioPath,
+    textPath,
+    referenceText,
+    totalDuration,
+    clips: [
+      {
+        name: npcReferenceDirectoryName,
+        category: "NPC",
+        duration: totalDuration,
+        audioPath,
+        text: referenceText,
+      },
     ],
-    {
-      cwd: path.dirname(args.downloaderScript),
-      stdio: "inherit",
-    }
-  );
+    audioEffectVersion: npcAudioEffectVersion,
+  };
+  manifest.references[speaker] = prepared;
+  return prepared;
 }
 
 function concatenateAudio(clips, outputPath, gapSeconds) {
@@ -648,11 +1025,6 @@ function concatenateAudio(clips, outputPath, gapSeconds) {
   childProcess.execFileSync("ffmpeg", args, { stdio: "ignore" });
 }
 
-function toLocalUrl(localFileRoot, filePath) {
-  const relativePath = path.relative(path.resolve(localFileRoot), path.resolve(filePath));
-  return `${localUrlPrefix}/${relativePath.split(path.sep).map(encodeURIComponent).join("/")}`;
-}
-
 function resolveToken() {
   return (
     process.env.ZERO_TTS_API_KEY ||
@@ -695,27 +1067,47 @@ async function apiRequest(args, endpoint, options = {}) {
 }
 
 async function uploadReference(args, reference) {
-  if (reference.referenceId && !args.force) {
-    return reference;
-  }
-
   // 先检查服务器上是否已经有同样名字的语音，避免重复上传
   try {
     const listData = await apiRequest(args, "/voices");
-    if (listData && Array.isArray(listData.items)) {
-      const existingVoice = listData.items.find(v => v.name === `BA ${reference.characterName}`);
-      if (existingVoice) {
-        console.log(`Found existing voice on server: ${existingVoice.name} (referenceId=${existingVoice.referenceId})`);
-        return {
-          ...reference,
-          voiceId: existingVoice.voiceId || existingVoice.id,
-          referenceId: existingVoice.referenceId || existingVoice.id,
-          voiceStatus: existingVoice.status || "READY",
-        };
-      }
+    const voices = Array.isArray(listData) ? listData : listData?.items || [];
+    const existingVoice = voices.find(
+      voice => voice.name === `BA ${reference.characterName}`,
+    );
+    if (existingVoice) {
+      console.log(
+        `Found existing voice on server: ${existingVoice.name} ` +
+          `(referenceId=${existingVoice.referenceId})`,
+      );
+      return {
+        ...reference,
+        voiceId: existingVoice.voiceId || existingVoice.id,
+        referenceId: existingVoice.referenceId || existingVoice.id,
+        voiceStatus: existingVoice.status || "READY",
+        providerSyncStatus: existingVoice.providerSyncStatus,
+      };
     }
-  } catch (e) {
-    console.warn("Failed to check existing voices on server, will proceed to upload. Error:", e.message);
+  } catch (error) {
+    console.warn(
+      `Failed to check existing voices on server: ${error.message}`,
+    );
+    const cachedReference =
+      reference.referenceId
+        ? reference
+        : findCachedReference(args.localFileRoot, reference);
+    if (cachedReference?.referenceId) {
+      console.warn(
+        `Reusing cached voice for ${reference.characterName}: ` +
+          `${cachedReference.referenceId}`,
+      );
+      return {
+        ...reference,
+        voiceId: cachedReference.voiceId,
+        referenceId: cachedReference.referenceId,
+        voiceStatus: cachedReference.voiceStatus || "READY",
+        providerSyncStatus: cachedReference.providerSyncStatus,
+      };
+    }
   }
 
   const form = new FormData();
@@ -740,9 +1132,60 @@ async function uploadReference(args, reference) {
   };
 }
 
+function findCachedReference(localFileRoot, reference) {
+  const ttsRoot = path.join(path.resolve(localFileRoot), "tts");
+  if (!fs.existsSync(ttsRoot)) {
+    return null;
+  }
+
+  const pendingDirectories = [ttsRoot];
+  while (pendingDirectories.length > 0) {
+    const directory = pendingDirectories.pop();
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+      const entryPath = path.join(directory, entry.name);
+      if (entry.isDirectory()) {
+        pendingDirectories.push(entryPath);
+        continue;
+      }
+      if (entry.name !== "voice-zero-tts-manifest.json") {
+        continue;
+      }
+
+      try {
+        const manifest = JSON.parse(fs.readFileSync(entryPath, "utf8"));
+        const match = Object.values(manifest.references || {}).find(
+          candidate =>
+            candidate.characterName === reference.characterName &&
+            candidate.referenceId,
+        );
+        if (match) {
+          return match;
+        }
+      } catch (error) {
+        console.warn(`Skipping invalid TTS manifest ${entryPath}: ${error.message}`);
+      }
+    }
+  }
+  return null;
+}
+
 async function createTask(args, line, reference, task) {
-  if (task?.taskId && !args.force) {
-    return task;
+  const generatedTextHash = textHash(line.text);
+  if (
+    task?.taskId &&
+    !args.force &&
+    taskGeneratedText(task) === line.text &&
+    task.speaker === line.speaker &&
+    task.referenceId === reference.referenceId
+  ) {
+    return {
+      ...task,
+      kind: line.kind,
+      resolvedSpeaker: line.resolvedSpeaker,
+      text: line.text,
+      generatedText: line.text,
+      generatedTextHash,
+    };
   }
   if (!reference.referenceId) {
     throw new Error(`Missing referenceId for speaker ${line.speaker}`);
@@ -766,111 +1209,447 @@ async function createTask(args, line, reference, task) {
 
   return {
     ...task,
+    kind: line.kind,
     index: line.index,
     speaker: line.speaker,
+    sourceSpeaker: line.sourceSpeaker,
+    resolvedSpeaker: line.resolvedSpeaker,
     characterName: line.characterName,
     text: line.text,
+    generatedText: line.text,
+    generatedTextHash,
     referenceId: reference.referenceId,
     taskId: data.taskId,
     status: data.status,
+    audioPath: "",
+    downloadedTaskId: "",
     textLength: data.textLength,
     estimatedQuota: data.estimatedQuota,
+    needsPublish: true,
+    generatedAt: new Date().toISOString(),
     createdAt: new Date().toISOString(),
   };
 }
 
-async function pollTasks({ args, manifest, story, outputPath }) {
-  const started = Date.now();
-  while (true) {
-    let active = 0;
-    let changed = false;
-
-    for (const task of Object.values(manifest.tasks)) {
-      if (!task.taskId) continue;
-      const completedAudioExists = task.audioPath && fs.existsSync(task.audioPath);
-      if (task.status === "COMPLETED" && completedAudioExists && !args.force) {
-        continue;
-      }
-        if (["FAILED", "CANCELLED"].includes(task.status)) {
-          if (!task.retryCount || task.retryCount < 2) {
-            console.log(`Task ${task.taskId} failed/cancelled. Retrying... (${task.retryCount || 0}/2)`);
-            const retryData = await apiRequest(args, `/generate`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                text: task.text,
-                referenceId: task.referenceId,
-                model: args.model,
-                temperature: args.temperature,
-              }),
-            });
-            task.taskId = retryData.taskId;
-            task.status = retryData.status;
-            task.retryCount = (task.retryCount || 0) + 1;
-            active++;
-            changed = true;
-          } else {
-            console.error(`[ERROR] Task for index ${task.index} failed permanently: ${task.errorMessage || task.status}`);
-          }
-          continue;
-        }
-
-      const data = await apiRequest(args, `/tasks/${task.taskId}`);
-      task.status = data.status;
-      task.resultUrl = data.resultUrl;
-      task.audioDuration = data.audioDuration;
-      task.fileSize = data.fileSize;
-      task.errorMessage = data.errorMessage;
-      task.updatedAt = new Date().toISOString();
-      changed = true;
-
-      if (task.status === "COMPLETED") {
-        await downloadTaskAudio({ args, task, story, outputPath });
-      } else if (!terminalTaskStatuses.has(task.status)) {
-        active++;
-      }
-    }
-
-    if (changed) {
-      return { active };
-    }
-
-    if (active === 0) {
-      return { active };
-    }
-
-    if ((Date.now() - started) / 1000 > args.pollTimeout) {
-      throw new Error(`Polling timed out after ${args.pollTimeout}s`);
-    }
-
-    await sleep(args.pollInterval * 1000);
+async function createCollectiveTask(args, line, references, task) {
+  if (
+    args.regenerateCollectiveMember &&
+    !line.members.some(
+      member => member.speaker === args.regenerateCollectiveMember,
+    )
+  ) {
+    throw new Error(
+      `Collective line ${line.index} does not contain member ` +
+        args.regenerateCollectiveMember,
+    );
   }
+  const members = {};
+  const generationKey = textHash(JSON.stringify({
+    text: line.text,
+    members: line.members.map(member => ({
+      speaker: member.speaker,
+      referenceId: references[member.speaker]?.referenceId || "",
+    })),
+  }));
+
+  for (const member of line.members) {
+    const reference = references[member.speaker];
+    if (!reference) {
+      throw new Error(
+        `Missing collective reference for ${member.speaker} at index ${line.index}`,
+      );
+    }
+    const memberLine = {
+      ...line,
+      kind: "collective-member",
+      speaker: member.speaker,
+      sourceSpeaker: line.speaker,
+      characterName: member.characterName,
+    };
+    members[member.speaker] = {
+      ...await createTask(
+        {
+          ...args,
+          force:
+            args.force ||
+            member.speaker === args.regenerateCollectiveMember,
+        },
+        memberLine,
+        reference,
+        task?.members?.[member.speaker],
+      ),
+      kind: "collective-member",
+      collectiveSpeaker: line.speaker,
+    };
+  }
+
+  const unchanged = task?.generationKey === generationKey;
+  return {
+    ...(unchanged ? task : {}),
+    kind: "collective",
+    index: line.index,
+    speaker: line.speaker,
+    sourceSpeaker: line.sourceSpeaker,
+    characterName: line.characterName,
+    text: line.text,
+    generatedText: line.text,
+    generatedTextHash: textHash(line.text),
+    generationKey,
+    memberOrder: line.members.map(member => member.speaker),
+    members,
+    mixConfig: line.mix || {},
+    status: unchanged ? task.status : "PENDING",
+    audioPath: unchanged ? task.audioPath : "",
+    needsPublish: unchanged ? task.needsPublish : true,
+    generatedAt: new Date().toISOString(),
+    createdAt: unchanged ? task.createdAt : new Date().toISOString(),
+  };
 }
 
-async function downloadTaskAudio({ args, task, story, outputPath }) {
+async function pollTasks({ args, manifest, storyId, taskKeys }) {
+  let active = 0;
+  for (const taskKey of taskKeys) {
+    const task = manifest.tasks[taskKey];
+    if (!task) continue;
+    if (task.kind === "collective") {
+      let memberActive = 0;
+      let memberFailed = false;
+      for (const member of Object.values(task.members || {})) {
+        const result = await pollSingleTask({ args, task: member, storyId });
+        memberActive += result.active;
+        memberFailed ||= result.failed;
+      }
+      if (memberFailed) {
+        task.status = "FAILED";
+        task.retryCount = 2;
+      } else if (memberActive > 0) {
+        task.status = "PROCESSING";
+        active += memberActive;
+      } else {
+        mixCollectiveTask({ args, task, storyId });
+      }
+      continue;
+    }
+
+    const result = await pollSingleTask({ args, task, storyId });
+    active += result.active;
+  }
+  return { active };
+}
+
+async function pollSingleTask({ args, task, storyId }) {
+  if (!task.taskId) {
+    return { active: 0, failed: true };
+  }
+  const completedAudioExists = task.audioPath && fs.existsSync(task.audioPath);
+  const npcEffectCurrent =
+    task.speaker !== npcSpeakerKey ||
+    task.audioEffectVersion === npcAudioEffectVersion;
+  if (
+    task.status === "COMPLETED" &&
+    completedAudioExists &&
+    npcEffectCurrent &&
+    !args.force
+  ) {
+    return { active: 0, failed: false };
+  }
+  if (["FAILED", "CANCELLED"].includes(task.status)) {
+    if (!task.retryCount || task.retryCount < 2) {
+      console.log(
+        `Task ${task.taskId} failed/cancelled. Retrying... ` +
+          `(${task.retryCount || 0}/2)`,
+      );
+      const retryData = await apiRequest(args, "/tasks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          text: task.text,
+          referenceId: task.referenceId,
+          model: args.model,
+          format: "mp3",
+          chunkLength: args.chunkLength,
+          temperature: args.temperature,
+          deliveryMode: "DOWNLOAD",
+        }),
+      });
+      task.taskId = retryData.taskId;
+      task.status = retryData.status;
+      task.retryCount = (task.retryCount || 0) + 1;
+      return { active: 1, failed: false };
+    }
+    console.error(
+      `[ERROR] Task for index ${task.index} failed permanently: ` +
+        `${task.errorMessage || task.status}`,
+    );
+    return { active: 0, failed: true };
+  }
+
+  const data = await apiRequest(args, `/tasks/${task.taskId}`);
+  task.status = data.status;
+  task.resultUrl = data.resultUrl;
+  task.audioDuration = data.audioDuration;
+  task.fileSize = data.fileSize;
+  task.errorMessage = data.errorMessage;
+  task.updatedAt = new Date().toISOString();
+
+  if (task.status === "COMPLETED") {
+    await downloadTaskAudio({ args, task, storyId });
+    return { active: 0, failed: false };
+  }
+  if (!terminalTaskStatuses.has(task.status)) {
+    return { active: 1, failed: false };
+  }
+  return { active: 0, failed: true };
+}
+
+async function downloadTaskAudio({ args, task, storyId }) {
+  const audioPath = task.kind === "collective-member"
+    ? path.join(
+      args.localFileRoot,
+      "tts",
+      args.type,
+      storyId,
+      "collective",
+      String(task.index).padStart(4, "0"),
+      `${slugify(task.speaker)}.mp3`,
+    )
+    : path.join(
+      args.localFileRoot,
+      "tts",
+      args.type,
+      storyId,
+      "lines",
+      `${String(task.index).padStart(4, "0")}.mp3`,
+    );
+  if (
+    !task.audioPath ||
+    !fs.existsSync(audioPath) ||
+    (task.downloadedTaskId && task.downloadedTaskId !== task.taskId) ||
+    (task.speaker === npcSpeakerKey &&
+      task.audioEffectVersion !== npcAudioEffectVersion) ||
+    args.force
+  ) {
+    fs.mkdirSync(path.dirname(audioPath), { recursive: true });
+    const response = await apiRequest(args, `/tasks/${task.taskId}/download`);
+    const bytes = Buffer.from(await response.arrayBuffer());
+    const rawAudioPath = `${audioPath}.${task.taskId}.raw.mp3`;
+    const temporaryAudioPath = `${audioPath}.${task.taskId}.part.mp3`;
+    try {
+      fs.writeFileSync(rawAudioPath, bytes);
+      if (task.speaker === npcSpeakerKey) {
+        const effect = buildNpcAudioEffect({ args, storyId, task });
+        applyNpcAudioEffect(rawAudioPath, temporaryAudioPath, effect.filter);
+        task.audioEffectVersion = npcAudioEffectVersion;
+        task.audioEffectSeed = effect.seed;
+        task.audioEffectParameters = effect.parameters;
+      } else {
+        fs.renameSync(rawAudioPath, temporaryAudioPath);
+        delete task.audioEffectVersion;
+        delete task.audioEffectSeed;
+        delete task.audioEffectParameters;
+      }
+      fs.renameSync(temporaryAudioPath, audioPath);
+    } finally {
+      fs.rmSync(rawAudioPath, { force: true });
+      fs.rmSync(temporaryAudioPath, { force: true });
+    }
+  }
+
+  task.audioPath = audioPath;
+  task.downloadedTaskId = task.taskId;
+  task.downloadedText = taskGeneratedText(task);
+  task.downloadedTextHash =
+    task.generatedTextHash || textHash(task.downloadedText);
+  task.downloadedAt = new Date().toISOString();
+}
+
+function mixCollectiveTask({ args, task, storyId }) {
+  const memberOrder = Array.isArray(task.memberOrder)
+    ? task.memberOrder
+    : Object.keys(task.members || {});
+  const members = memberOrder.map(speaker => task.members?.[speaker]);
+  if (
+    members.length < 2 ||
+    members.some(member =>
+      !member ||
+      member.status !== "COMPLETED" ||
+      !member.audioPath ||
+      !fs.existsSync(member.audioPath)
+    )
+  ) {
+    throw new Error(
+      `Collective line ${task.index} cannot be mixed until every member completes`,
+    );
+  }
+
+  const memberOverrides = task.mixConfig?.memberOverrides || {};
+  const mixInputs = members.map(member => ({
+    speaker: member.speaker,
+    referenceId: member.referenceId,
+    downloadedTaskId: member.downloadedTaskId,
+    downloadedTextHash: member.downloadedTextHash,
+    delayMs: Math.max(
+      0,
+      Math.round(Number(memberOverrides[member.speaker]?.delayMs || 0)),
+    ),
+    gainDb: Number(memberOverrides[member.speaker]?.gainDb || 0),
+  }));
+  const inputsHash = textHash(JSON.stringify({
+    version: collectiveMixVersion,
+    text: taskGeneratedText(task),
+    inputs: mixInputs,
+  }));
   const audioPath = path.join(
     args.localFileRoot,
     "tts",
     args.type,
-    String(story.GroupId || "story"),
+    storyId,
     "lines",
-    `${String(task.index).padStart(4, "0")}.mp3`
+    `${String(task.index).padStart(4, "0")}.mp3`,
   );
-  if (!fs.existsSync(audioPath) || args.force) {
-    fs.mkdirSync(path.dirname(audioPath), { recursive: true });
-    const response = await apiRequest(args, `/tasks/${task.taskId}/download`);
-    const bytes = Buffer.from(await response.arrayBuffer());
-    fs.writeFileSync(audioPath, bytes);
+  if (
+    !args.force &&
+    task.mix?.version === collectiveMixVersion &&
+    task.mix?.inputsHash === inputsHash &&
+    fs.existsSync(audioPath)
+  ) {
+    task.status = "COMPLETED";
+    task.audioPath = audioPath;
+    return;
   }
 
+  fs.mkdirSync(path.dirname(audioPath), { recursive: true });
+  const temporaryAudioPath = `${audioPath}.${inputsHash}.part.mp3`;
+  const ffmpegArgs = ["-y", "-hide_banner", "-loglevel", "warning"];
+  for (const member of members) {
+    ffmpegArgs.push("-i", member.audioPath);
+  }
+  const filters = mixInputs.map((input, index) =>
+    `[${index}:a]aresample=44100,` +
+      "aformat=sample_fmts=fltp:channel_layouts=mono," +
+      `volume=${input.gainDb}dB,adelay=${input.delayMs}:all=1[a${index}]`,
+  );
+  filters.push(
+    `${mixInputs.map((_, index) => `[a${index}]`).join("")}` +
+      `amix=inputs=${mixInputs.length}:duration=longest:` +
+      "dropout_transition=0:normalize=1," +
+      "loudnorm=I=-16:TP=-1.5:LRA=8[out]",
+  );
+  ffmpegArgs.push(
+    "-filter_complex",
+    filters.join(";"),
+    "-map",
+    "[out]",
+    "-ar",
+    "44100",
+    "-ac",
+    "1",
+    "-c:a",
+    "libmp3lame",
+    "-b:a",
+    "192k",
+    temporaryAudioPath,
+  );
+  try {
+    childProcess.execFileSync("ffmpeg", ffmpegArgs, { stdio: "ignore" });
+    fs.renameSync(temporaryAudioPath, audioPath);
+  } finally {
+    fs.rmSync(temporaryAudioPath, { force: true });
+  }
+
+  task.status = "COMPLETED";
   task.audioPath = audioPath;
-  task.voiceUrl = toLocalUrl(args.localFileRoot, audioPath);
-  story.content[task.index].VoiceJp = task.voiceUrl;
-  fs.writeFileSync(outputPath, `${JSON.stringify(story, null, 2)}\n`);
+  task.audioDuration = Number(getAudioDuration(audioPath).toFixed(3));
+  task.mix = {
+    version: collectiveMixVersion,
+    inputsHash,
+    inputs: mixInputs,
+    audioPath,
+    mixedAt: new Date().toISOString(),
+  };
+  task.downloadedText = taskGeneratedText(task);
+  task.downloadedTextHash = task.generatedTextHash;
+  task.downloadedAt = new Date().toISOString();
+  task.needsPublish = true;
+}
+
+function buildNpcAudioEffect({ args, storyId, task }) {
+  const seed = `${args.type}:${storyId}:${task.index}:${textHash(taskGeneratedText(task))}`;
+  const value = (name, min, max) => {
+    const digest = crypto.createHash("sha256").update(`${seed}:${name}`).digest();
+    const fraction = digest.readUInt32BE(0) / 0xffffffff;
+    return min + (max - min) * fraction;
+  };
+  const parameters = {
+    phaserDecay: Number(value("phaser-decay", 0.4, 0.52).toFixed(3)),
+    phaserSpeed: Number(value("phaser-speed", 0.65, 1).toFixed(3)),
+    flangerDepth: Number(value("flanger-depth", 2.7, 3.5).toFixed(3)),
+    flangerRegen: Number(value("flanger-regen", 15, 22).toFixed(3)),
+    flangerWidth: Number(value("flanger-width", 68, 82).toFixed(3)),
+    flangerSpeed: Number(value("flanger-speed", 0.58, 0.85).toFixed(3)),
+    tremoloFrequency: Number(value("tremolo-frequency", 19, 25).toFixed(3)),
+    tremoloDepth: Number(value("tremolo-depth", 0.18, 0.27).toFixed(3)),
+    crusherBits: Math.round(value("crusher-bits", 7, 9)),
+    crusherMix: Number(value("crusher-mix", 0.24, 0.34).toFixed(3)),
+    echoDelay: Number(value("echo-delay", 12, 18).toFixed(3)),
+    echoDecay: Number(value("echo-decay", 0.13, 0.19).toFixed(3)),
+  };
+  const filter =
+    "highpass=f=100,lowpass=f=9500," +
+    "chorus=0.55:0.90:6|12|18:0.42|0.34|0.26:0.55|0.85|1.10:1.4|1.0|0.8," +
+    "aphaser=in_gain=0.55:out_gain=0.80:delay=2:" +
+      `decay=${parameters.phaserDecay}:speed=${parameters.phaserSpeed}:type=t,` +
+    `flanger=delay=2:depth=${parameters.flangerDepth}:` +
+      `regen=${parameters.flangerRegen}:width=${parameters.flangerWidth}:` +
+      `speed=${parameters.flangerSpeed},` +
+    `tremolo=f=${parameters.tremoloFrequency}:d=${parameters.tremoloDepth},` +
+    `acrusher=bits=${parameters.crusherBits}:mix=${parameters.crusherMix},` +
+    `aecho=0.6:0.35:${parameters.echoDelay}:${parameters.echoDecay},` +
+    "acompressor=threshold=0.12:ratio=2:attack=15:release=180:makeup=1.4," +
+    "loudnorm=I=-16:TP=-1.5:LRA=8";
+  return { seed, parameters, filter };
+}
+
+function applyNpcAudioEffect(inputPath, outputPath, filter) {
+  childProcess.execFileSync(
+    "ffmpeg",
+    [
+      "-y",
+      "-hide_banner",
+      "-loglevel",
+      "warning",
+      "-i",
+      inputPath,
+      "-af",
+      filter,
+      "-ar",
+      "44100",
+      "-ac",
+      "1",
+      "-c:a",
+      "libmp3lame",
+      "-b:a",
+      "192k",
+      outputPath,
+    ],
+    { stdio: "ignore" },
+  );
 }
 
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function removeLegacyLocalUrlFields(manifest) {
+  delete manifest.localUrlPrefix;
+  delete manifest.outputPath;
+
+  for (const reference of Object.values(manifest.references || {})) {
+    delete reference.audioUrl;
+  }
+  for (const task of Object.values(manifest.tasks || {})) {
+    delete task.voiceUrl;
+  }
 }
 
 async function main() {
@@ -889,47 +1668,132 @@ async function main() {
     throw new Error(`Story file not found: ${storyPath}`);
   }
 
-  const outputPath = args.output ? path.resolve(process.cwd(), args.output) : storyPath;
   const storyId = storyIdFromPath(storyPath);
   const story = JSON.parse(fs.readFileSync(storyPath, "utf8"));
-  const speakerMap = loadSpeakerMap(args);
-  const voiceLines = extractVoiceLines(story, speakerMap, args.limit);
+  if (!story || !Array.isArray(story.content)) {
+    throw new Error("Story JSON must have a content array");
+  }
+  const collectiveConfig = loadCollectiveVoiceConfig(storyPath, story);
+  const speakerMap = await loadSpeakerMap(args, story, collectiveConfig);
+  const allVoiceLines = extractVoiceLines(
+    story,
+    speakerMap,
+    collectiveConfig,
+    0,
+  );
+  const manifestPath = resolveManifestPath(args, storyId);
+  const loadedManifest = loadManifest(manifestPath);
+  let voiceLines;
+  if (args.regenerateCollectiveMember) {
+    voiceLines = allVoiceLines.filter(line =>
+      line.kind === "collective" &&
+      line.members.some(
+        member => member.speaker === args.regenerateCollectiveMember,
+      ),
+    );
+    if (voiceLines.length === 0) {
+      throw new Error(
+        `No collective lines contain ${args.regenerateCollectiveMember}`,
+      );
+    }
+  } else if (args.missingOnly) {
+    voiceLines = allVoiceLines.filter(line =>
+      !String(story.content[line.index].VoiceJp || "").trim(),
+    );
+  } else {
+    voiceLines = args.changedOnly
+      ? allVoiceLines.filter(line =>
+        isChangedSincePublish(
+          line,
+          loadedManifest.tasks?.[String(line.index)],
+          story.content[line.index],
+        ),
+      )
+      : allVoiceLines;
+  }
+  if (args.limit > 0) {
+    voiceLines = voiceLines.slice(0, args.limit);
+  }
   const speakers = new Map();
   for (const line of voiceLines) {
-    speakers.set(line.speaker, line.characterName);
+    if (line.kind === "collective") {
+      for (const member of line.members) {
+        speakers.set(member.speaker, member.characterName);
+      }
+    } else {
+      speakers.set(line.speaker, line.characterName);
+    }
   }
 
-  const manifestPath = resolveManifestPath(args, storyId);
   const manifest = {
-    ...buildManifestBase(args, storyPath, outputPath, storyId, voiceLines),
-    ...loadManifest(manifestPath),
+    ...loadedManifest,
+    ...buildManifestBase(args, storyPath, storyId, allVoiceLines),
   };
   manifest.references ||= {};
   manifest.tasks ||= {};
+  manifest.collectiveVoiceConfig = {
+    path: collectiveConfig.configPath,
+    scanDigest: collectiveConfig.config.source.scanDigest,
+    lineCount: collectiveConfig.linesByIndex.size,
+    collectiveLineCount: [...collectiveConfig.linesByIndex.values()].filter(
+      entry => entry.kind === "collective",
+    ).length,
+    unknownSpeakerLineCount: [
+      ...collectiveConfig.linesByIndex.values(),
+    ].filter(entry => entry.kind === "unknown-speaker").length,
+  };
+  removeLegacyLocalUrlFields(manifest);
 
   const plan = {
     stage: args.stage,
     storyPath,
-    outputPath,
     manifestPath,
     localFileRoot: path.resolve(args.localFileRoot),
-    downloaderOutput: args.downloaderOutput,
-    downloaderScript: args.downloaderScript,
-    downloadMissing: args.downloadMissing,
+    characterRoot: path.resolve(args.characterRoot),
+    changedOnly: args.changedOnly,
+    missingOnly: args.missingOnly,
+    regenerateCollectiveMember: args.regenerateCollectiveMember || null,
+    totalVoiceLines: allVoiceLines.length,
+    selectedVoiceLines: voiceLines.length,
+    selectedIndices: voiceLines.map(line => line.index),
+    selectedCollectiveLines: voiceLines
+      .filter(line => line.kind === "collective")
+      .map(line => ({
+        index: line.index,
+        speaker: line.speaker,
+        members: line.members.map(member => member.speaker),
+      })),
+    selectedUnknownSpeakerLines: voiceLines
+      .filter(line =>
+        ["resolved-speaker", "anonymous"].includes(line.kind),
+      )
+      .map(line => ({
+        index: line.index,
+        resolution:
+          line.kind === "resolved-speaker" ? "character" : "anonymous",
+        resolvedSpeaker: line.resolvedSpeaker,
+        referenceSpeaker: line.speaker,
+      })),
     speakers: [...speakers.entries()].map(([speaker, characterName]) => ({
       speaker,
       characterName,
     })),
-    voiceLines: voiceLines.length,
     dryRun: args.dryRun,
   };
   console.log(JSON.stringify(plan, null, 2));
 
-  if (["prepare", "upload", "tasks", "all"].includes(args.stage)) {
+  if (args.missingOnly && voiceLines.length === 0) {
+    console.log("No missing voice lines.");
+    return;
+  }
+
+  if (
+    !args.dryRun &&
+    ["prepare", "upload", "tasks", "all"].includes(args.stage)
+  ) {
     for (const [speaker, characterName] of speakers) {
       const reference = prepareReferenceAudio({
         args,
-        storyId,
         speaker,
         characterName,
         manifest,
@@ -939,9 +1803,7 @@ async function main() {
           `${reference.totalDuration}s, ${reference.clips.length} clips`
       );
     }
-    if (!args.dryRun) {
-      saveManifest(manifestPath, manifest);
-    }
+    saveManifest(manifestPath, manifest);
   }
 
   if (args.stage === "prepare" || args.dryRun) {
@@ -963,38 +1825,67 @@ async function main() {
 
   if (["tasks", "all"].includes(args.stage)) {
     for (const line of voiceLines) {
-      const reference = manifest.references[line.speaker];
       const taskKey = String(line.index);
-      manifest.tasks[taskKey] = await createTask(
-        args,
-        line,
-        reference,
-        manifest.tasks[taskKey]
-      );
-      console.log(`Task ${line.index}: ${manifest.tasks[taskKey].taskId}`);
+      if (line.kind === "collective") {
+        manifest.tasks[taskKey] = await createCollectiveTask(
+          args,
+          line,
+          manifest.references,
+          manifest.tasks[taskKey],
+        );
+        console.log(
+          `Collective task ${line.index}: ` +
+            manifest.tasks[taskKey].memberOrder.join(", "),
+        );
+      } else {
+        const reference = manifest.references[line.speaker];
+        manifest.tasks[taskKey] = await createTask(
+          args,
+          line,
+          reference,
+          manifest.tasks[taskKey],
+        );
+        console.log(`Task ${line.index}: ${manifest.tasks[taskKey].taskId}`);
+      }
       saveManifest(manifestPath, manifest);
     }
   }
 
   if (["poll", "all"].includes(args.stage)) {
+    const pollStarted = Date.now();
+    const taskKeys = voiceLines.map(line => String(line.index));
     let failedTasksCount = 0;
     while (true) {
-      const { active } = await pollTasks({ args, manifest, story, outputPath });
+      const { active } = await pollTasks({
+        args,
+        manifest,
+        storyId,
+        taskKeys,
+      });
       saveManifest(manifestPath, manifest);
       console.log(`Polling round done, active tasks: ${active}`);
-      
-      failedTasksCount = Object.values(manifest.tasks).filter(t => 
-        ["FAILED", "CANCELLED"].includes(t.status) && t.retryCount >= 2
-      ).length;
-      
+
+      failedTasksCount = taskKeys
+        .map(taskKey => manifest.tasks[taskKey])
+        .filter(
+          task => task &&
+          ["FAILED", "CANCELLED"].includes(task.status) && task.retryCount >= 2,
+        ).length;
+
       if (active === 0) {
         break;
       }
+      if ((Date.now() - pollStarted) / 1000 > args.pollTimeout) {
+        throw new Error(`Polling timed out after ${args.pollTimeout}s`);
+      }
       await sleep(args.pollInterval * 1000);
     }
-    
+
     if (failedTasksCount > 0) {
-      console.error(`\n[CRITICAL ERROR] Finished polling, but ${failedTasksCount} tasks permanently failed to generate voice! Please check the logs above.`);
+      console.error(
+        `\n[CRITICAL ERROR] Finished polling, but ${failedTasksCount} tasks ` +
+          "permanently failed to generate voice! Please check the logs above.",
+      );
       process.exit(1);
     }
   }

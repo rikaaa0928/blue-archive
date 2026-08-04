@@ -28,6 +28,7 @@ import { buildStoryIndexStackRecord } from "@/layers/translationLayer/utils";
 import BaUI from "@/layers/uiLayer/BaUI.vue";
 import { useUiState } from "@/stores/state";
 import { StoryRawUnit, TranslatedStoryUnit } from "@/types/common";
+import type { ShowOption } from "@/types/events";
 import { Language, StorySummary } from "@/types/store";
 import { useElementSize } from "@vueuse/core";
 import eventBus from "./eventBus";
@@ -43,6 +44,10 @@ export type PlayerProps = {
   storySummary: StorySummary;
   startFullScreen?: boolean;
   recordMode?: boolean;
+  /** Initialize all layers and audio, but wait for startDeferredPlayback(). */
+  deferPlayback?: boolean;
+  /** SelectionGroup keyed by the zero-based story content index. */
+  recordSelections?: Record<number, number>;
   useMp3?: boolean;
   useSuperSampling?: "2" | "4" | "" | boolean;
   /** 跳转至传入的 index */
@@ -56,6 +61,7 @@ export type PlayerProps = {
 const props = withDefaults(defineProps<PlayerProps>(), {
   startFullScreen: false,
   recordMode: false,
+  deferPlayback: false,
   useMp3: false,
 });
 const storySummary = ref(props.storySummary);
@@ -64,6 +70,37 @@ storySummary.value.summary = storySummary.value.summary.replaceAll(
   props.userName
 );
 const emit = defineEmits(["end", "error", "initiated"]);
+
+const RECORD_OPTION_WAIT_MS = 2000;
+let recordOptionTimer: ReturnType<typeof setTimeout> | undefined;
+
+function handleRecordOption(options: ShowOption[]) {
+  if (!props.recordMode) {
+    return;
+  }
+
+  const storyIndex = storyHandler.currentStoryIndex;
+  const selectionGroup = props.recordSelections?.[storyIndex];
+  if (
+    selectionGroup === undefined ||
+    !options.some(option => option.SelectionGroup === selectionGroup)
+  ) {
+    const error = new Error(
+      `Missing or invalid recording pre-selection at story index ${storyIndex}`,
+    );
+    console.error(error);
+    emit("error", error);
+    return;
+  }
+
+  clearTimeout(recordOptionTimer);
+  // Normal auto-play keeps completed text visible for two seconds.
+  recordOptionTimer = setTimeout(() => {
+    eventBus.emit("recordSelect", selectionGroup);
+  }, RECORD_OPTION_WAIT_MS);
+}
+
+eventBus.on("option", handleRecordOption);
 
 const playerHeight = ref(props.height);
 const playerWidth = ref(props.width);
@@ -305,6 +342,18 @@ function resetLive2d() {
   }
 }
 
+let deferredPlaybackStarted = false;
+function startDeferredPlayback() {
+  if (!props.deferPlayback || deferredPlaybackStarted) {
+    return;
+  }
+  deferredPlaybackStarted = true;
+  eventBus.emit("loaded");
+  eventBus.emit("hidemenu");
+  autoMode.value = props.recordMode || false;
+  storyHandler.storyPlay().then();
+}
+
 defineExpose({
   hotReplaceStoryUnit,
   resetLive2d,
@@ -327,12 +376,16 @@ onMounted(async () => {
       eventBus.emit("end");
       emit("end");
     },
-    () => {
-      emit("error");
-    }
+    error => {
+      emit("error", error);
+    },
+    props.deferPlayback,
+    () => emit("initiated", startDeferredPlayback)
   );
   eventBus.on("loaded", () => {
-    emit("initiated");
+    if (!props.deferPlayback) {
+      emit("initiated", startDeferredPlayback);
+    }
   });
   if (props.startFullScreen) {
     updateFullScreenState();
@@ -349,7 +402,7 @@ onMounted(async () => {
 
 const { tabActivated, autoMode } = useUiState();
 
-autoMode.value = props.recordMode || false;
+autoMode.value = props.deferPlayback ? false : props.recordMode || false;
 
 const visibility = useDocumentVisibility();
 
@@ -368,6 +421,8 @@ watch(
 );
 
 onUnmounted(() => {
+  clearTimeout(recordOptionTimer);
+  eventBus.off("option", handleRecordOption);
   dispose();
   window.removeEventListener("resize", updateFullScreenState);
 });
@@ -421,12 +476,12 @@ onDeactivated(() => {
           :style="{ transform: `scale(${pixiScale})` }"
         ></div>
         <BaUI
-          v-if="!props.recordMode"
+          v-model:full-screen="fullScreen"
           :height="playerHeight"
           :width="playerWidth"
           :story-summary="storySummary"
-          v-model:full-screen="fullScreen"
           :language="language"
+          :record-mode="props.recordMode"
         />
         <BaDialog
           :player-height="playerHeight"

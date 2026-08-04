@@ -84,3 +84,4 @@ apps/viewer-next/packages/eden-design/docs/.vitepress/dist/
 .pnpm-store/
 .wrangler/
 LOCAL_RUNBOOK.md
+bilibili_description.md

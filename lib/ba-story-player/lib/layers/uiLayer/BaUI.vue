@@ -3,7 +3,7 @@ import eventBus from "@/eventBus";
 import { storyHandler } from "@/index";
 import { usePlayerStore } from "@/stores";
 import gsap from "gsap";
-import { computed, onMounted, provide, ref, watch } from "vue";
+import { computed, onMounted, onUnmounted, provide, ref, watch } from "vue";
 import BaChatLog from "./components/BaChatLog/BaChatLog.vue";
 import BaPlayerSetting from "./components/BaPlayerSetting/BaPlayerSetting.vue";
 import BaDialog from "./components/BaDialog.vue";
@@ -31,11 +31,13 @@ let props = defineProps<{
   width: number;
   fullScreen: boolean;
   language: Language;
+  recordMode?: boolean;
 }>();
 
 provide("language", props.language);
 
 const selectOptions = ref<ShowOption[]>([]);
+const selector = ref<{ animateSelect: (index: number) => void }>();
 const emitter = defineEmits(["update:fullScreen"]);
 
 const overrideTextContainer = computed(() =>
@@ -70,6 +72,20 @@ eventBus.on("showmenu", () => {
   showMenu.value = true;
 });
 eventBus.on("option", e => (selectOptions.value = [...e]));
+function handleRecordSelect(selectionGroup: number) {
+  const selectionIndex = selectOptions.value.findIndex(
+    option => option.SelectionGroup === selectionGroup
+  );
+  if (selectionIndex === -1) {
+    console.error(
+      `Cannot animate recording selection group ${selectionGroup}`
+    );
+    return;
+  }
+  selector.value?.animateSelect(selectionIndex);
+}
+eventBus.on("recordSelect", handleRecordSelect);
+onUnmounted(() => eventBus.off("recordSelect", handleRecordSelect));
 eventBus.on("next", () => {
   // 如果用跳转之类的事件跳过后, 此时关闭显示 选项
   if (!selectOptions.value.length) return;
@@ -103,11 +119,11 @@ function handleBtnSetting() {
 }
 
 // 处理选项
-function handleBaSelector(selectionGroup: number) {
+function handleBaSelector(selectionIndex: number) {
   showSubMenu.value = false;
   eventBus.emit("playOtherSounds", "select");
-  eventBus.emit("select", selectOptions.value[selectionGroup].SelectionGroup);
-  usePlayerStore().updateLogText(selectOptions.value[selectionGroup]);
+  eventBus.emit("select", selectOptions.value[selectionIndex].SelectionGroup);
+  usePlayerStore().updateLogText(selectOptions.value[selectionIndex]);
 
   selectOptions.value.length = 0;
 }
@@ -241,6 +257,7 @@ function getI18n(key: string) {
     tabindex="0"
   >
     <div
+      v-if="!props.recordMode"
       class="right-top"
       :style="{ opacity: showMenu || forceShowMenu ? 1 : 0 }"
       ref="rightTop"
@@ -314,12 +331,14 @@ function getI18n(key: string) {
 
     <BaSelector
       id="ba-story-selector"
+      ref="selector"
       :selection="selectOptions"
       @select="handleBaSelector"
       v-if="selectOptions.length !== 0"
     />
 
     <BaDialog
+      v-if="!props.recordMode"
       id="ba-story-summary"
       :title="getI18n('summary')"
       v-model:show="showSummary"
@@ -345,6 +364,7 @@ function getI18n(key: string) {
     </BaDialog>
 
     <BaDialog
+      v-if="!props.recordMode"
       id="ba-story-log"
       :title="getI18n('log')"
       width="min(1080px, 80%)"
@@ -355,6 +375,7 @@ function getI18n(key: string) {
     </BaDialog>
 
     <BaDialog
+      v-if="!props.recordMode"
       id="ba-player-setting"
       :title="getI18n('setting')"
       v-model:show="showSetting"

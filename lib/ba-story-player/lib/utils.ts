@@ -111,10 +111,11 @@ export function getResourcesUrl(type: ResourcesTypes, arg: string): string {
       const skelPath = superSampling
         ? `${dataUrl}/spine/${filename}/${filename}${superSampling}/${filename}.skel`
         : `${dataUrl}/spine/${filename}/${filename}.skel`;
-      // ch*/np* sprites exist only on ba-all-data-spine42 (Spine 4.2).
-      // named sprites — on ba-all-data (Spine 4.2); spine42 has stale 3.8 copies
+      // ch*/np* and generic Sukeban sprites exist only on
+      // ba-all-data-spine42 (Spine 4.2). Most named character sprites live on
+      // ba-all-data; spine42 has stale 3.8 copies for those named characters.
       // FIXME: CI intervention needed
-      if (/^(ch|np)\d+/i.test(id ?? "")) {
+      if (/^(?:(?:ch|np)\d+|sukeban_)/i.test(id ?? "")) {
         return getSpine42Url(skelPath);
       }
       return rewritePath(skelPath);
@@ -141,6 +142,19 @@ export function getResourcesUrl(type: ResourcesTypes, arg: string): string {
     default:
       return "";
   }
+}
+
+/**
+ * Some popup files use an uppercase `Popup` prefix even though story data uses
+ * lowercase `popup`. Keep the story spelling as the primary URL and expose one
+ * case-only fallback for the resource preloader.
+ */
+export function getPopupImageFallbackUrl(url: string): string | undefined {
+  const match = url.match(/^(.*\/)(popup)([^/?]*\.png(?:[?#].*)?)$/);
+  if (!match) {
+    return undefined;
+  }
+  return `${match[1]}Popup${match[3]}`;
 }
 
 /**

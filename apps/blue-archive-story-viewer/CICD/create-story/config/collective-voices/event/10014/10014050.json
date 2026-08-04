@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 2,
+  "source": {
+    "storyPath": "public/story/event/10014/10014050.json",
+    "contentLength": 78,
+    "scanDigest": "sha256:5d4b2d465c14a67ef19bd6c995e5e6c5fb6614e18def8048d1125318115ccc31"
+  },
+  "lines": [
+    {
+      "storyIndex": 2,
+      "kind": "unknown-speaker",
+      "status": "ready",
+      "expected": {
+        "speaker": "???",
+        "scriptKr": "#na;???;……어라. 먼저 와 계셨네요? 선생님!",
+        "ttsText": "[surprised]……あ、先生！\n[cheerful]先に来てたんですね！"
+      },
+      "resolution": "character",
+      "resolvedSpeaker": "레이사",
+      "evidence": "Reisa appears immediately afterward, greets Sensei, and continues the same meeting conversation."
+    },
+    {
+      "storyIndex": 33,
+      "kind": "unknown-speaker",
+      "status": "ready",
+      "expected": {
+        "speaker": "???",
+        "scriptKr": "#na;???;여기 있었구나, 이상한 자경단 녀석!!",
+        "ttsText": "[shouting]ここにいた！！自警団のチビ！！"
+      },
+      "resolution": "anonymous",
+      "resolvedSpeaker": "스케반 A",
+      "evidence": "The following stage reveal identifies the attackers as Sukeban A and B; the next spoken confirmation is assigned to Sukeban A. No named playable identity is established."
+    }
+  ]
+}

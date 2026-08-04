@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 2,
+  "source": {
+    "storyPath": "public/story/event/10014/10014040.json",
+    "contentLength": 143,
+    "scanDigest": "sha256:9c2aef99da47a0033f0fac810301c33664ad07639e779cae23126c1f1a8647cd"
+  },
+  "lines": [
+    {
+      "storyIndex": 15,
+      "kind": "unknown-speaker",
+      "status": "ready",
+      "expected": {
+        "speaker": "???",
+        "scriptKr": "#na;???;어-이, 거기 귀여운 아가씨~.",
+        "ttsText": "[playful]へいへい\nそこのかわい子ちゃん"
+      },
+      "resolution": "character",
+      "resolvedSpeaker": "나츠",
+      "evidence": "This begins a continuous two-line taunt; Natsu is the first revealed speaker and immediately continues the same exaggerated playful delivery."
+    },
+    {
+      "storyIndex": 16,
+      "kind": "unknown-speaker",
+      "status": "ready",
+      "expected": {
+        "speaker": "???",
+        "scriptKr": "#na;???;심심해 보이는데~. 시간 괜찮아? 언니들이랑 재밌는 시간 보낼래~?",
+        "ttsText": "[teasing]退屈そうだね\nお姉さんたちと楽しく遊ばない？"
+      },
+      "resolution": "character",
+      "resolvedSpeaker": "나츠",
+      "evidence": "This completes the continuous taunt; Natsu is the first revealed speaker and immediately continues the same exaggerated playful delivery."
+    },
+    {
+      "storyIndex": 55,
+      "kind": "unknown-speaker",
+      "status": "ready",
+      "expected": {
+        "speaker": "???",
+        "scriptKr": "#na;???;역시 이럴 줄 알았어요!!!\n#all;hide\n#fontsize;100",
+        "ttsText": "[shouting] やっぱり！！そうだと思ってました！！！"
+      },
+      "resolution": "character",
+      "resolvedSpeaker": "레이사",
+      "evidence": "Reisa is revealed immediately after the hidden shout and continues the same accusation."
+    }
+  ]
+}

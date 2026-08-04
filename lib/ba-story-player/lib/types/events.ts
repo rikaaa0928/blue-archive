@@ -102,6 +102,8 @@ export type Events = {
    * 播放voiceJP结束提示
    */
   playVoiceJPDone: string;
+  /** Voice playback failed before reaching its end event. */
+  playVoiceJPError: { url: string; error: unknown };
   /**
    * 播放sfx结束提示
    */
@@ -174,6 +176,10 @@ export type Events = {
    * 显示选项
    */
   option: ShowOption[];
+  /**
+   * 录制模式下触发指定 SelectionGroup 的选项点击动画
+   */
+  recordSelect: number;
   /**
    * 进入下一剧情语句
    */

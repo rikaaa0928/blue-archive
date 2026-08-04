@@ -12,7 +12,6 @@ loadEnvFile(path.join(repoRoot, ".env"));
 
 const flatStoryTypes = new Set(["main", "other"]);
 const nestedStoryTypes = new Set(["favor", "event", "group", "mini"]);
-const localUrlPrefix = "/api/local-files/";
 const audioMimeTypes = new Map([
   [".aac", "audio/aac"],
   [".flac", "audio/flac"],
@@ -61,6 +60,7 @@ Options:
   --type <type>             story type when source is an id, default: group
   --directory-id <id>       directory id for favor/event/group/mini
   --output <file>           story JSON to write, default: overwrite source
+  --manifest <file>         ZeroTTS manifest, default under .local-files
   --local-file-root <dir>   local file root, default: .local-files
   --bucket <name>           R2 bucket name, default: R2_BUCKET
   --account-id <id>         Cloudflare account id, default: CLOUDFLARE_ACCOUNT_ID
@@ -70,6 +70,7 @@ Options:
   --key-prefix <prefix>     R2 object prefix, default: ba-story-viewer
   --cache-control <value>   object Cache-Control, default: public, max-age=31536000, immutable
   --skip-upload             only rewrite VoiceJp URLs
+  --missing-only            publish only voice lines whose VoiceJp is empty
   --dry-run                 print planned uploads/rewrites without writing
   --help, -h                show this help
 
@@ -91,6 +92,7 @@ function parseArgs(argv) {
     type: "group",
     directoryId: "",
     output: "",
+    manifest: "",
     localFileRoot:
       process.env.BA_LOCAL_FILE_ROOT || path.resolve(appRoot, ".local-files"),
     bucket: process.env.R2_BUCKET || "",
@@ -102,6 +104,7 @@ function parseArgs(argv) {
     cacheControl:
       process.env.R2_CACHE_CONTROL || "public, max-age=31536000, immutable",
     skipUpload: false,
+    missingOnly: false,
     dryRun: false,
     help: false,
   };
@@ -118,6 +121,9 @@ function parseArgs(argv) {
         break;
       case "--output":
         args.output = readOptionValue(argv, ++index, arg);
+        break;
+      case "--manifest":
+        args.manifest = readOptionValue(argv, ++index, arg);
         break;
       case "--local-file-root":
         args.localFileRoot = readOptionValue(argv, ++index, arg);
@@ -145,6 +151,9 @@ function parseArgs(argv) {
         break;
       case "--skip-upload":
         args.skipUpload = true;
+        break;
+      case "--missing-only":
+        args.missingOnly = true;
         break;
       case "--dry-run":
         args.dryRun = true;
@@ -229,36 +238,70 @@ function validateArgs(args) {
   }
 }
 
-function collectVoiceItems(story, args) {
+function storyIdFromPath(storyPath) {
+  return path.basename(storyPath, ".json");
+}
+
+function resolveManifestPath(args, storyId) {
+  if (args.manifest) {
+    return path.resolve(process.cwd(), args.manifest);
+  }
+  return path.join(
+    path.resolve(args.localFileRoot),
+    "tts",
+    args.type,
+    storyId,
+    "voice-zero-tts-manifest.json",
+  );
+}
+
+function collectVoiceItems(story, args, manifest) {
   const items = [];
   const localFileRoot = path.resolve(args.localFileRoot);
 
-  for (const [index, unit] of story.content.entries()) {
-    const voiceJp = String(unit.VoiceJp || "");
-    if (!voiceJp.startsWith(localUrlPrefix)) {
+  for (const task of Object.values(manifest.tasks || {})) {
+    if (task.status !== "COMPLETED" || !Number.isSafeInteger(task.index)) {
+      continue;
+    }
+    if (!story.content[task.index]) {
+      throw new Error(`TTS task index is outside story content: ${task.index}`);
+    }
+    const currentVoiceJp = String(story.content[task.index].VoiceJp || "");
+    if (args.missingOnly && currentVoiceJp.trim()) {
+      continue;
+    }
+    const currentVoiceText = String(
+      story.content[task.index].TextJpVoice || "",
+    ).trim();
+    const generatedText = String(
+      task.generatedText ?? task.text ?? "",
+    ).trim();
+    if (!currentVoiceText || generatedText !== currentVoiceText) {
       continue;
     }
 
-    const relativePath = decodeURIComponent(voiceJp.slice(localUrlPrefix.length));
-    const localPath = path.resolve(localFileRoot, relativePath);
+    const localPath = path.resolve(String(task.audioPath || ""));
     const relativeToRoot = path.relative(localFileRoot, localPath);
     if (relativeToRoot.startsWith("..") || path.isAbsolute(relativeToRoot)) {
-      throw new Error(`VoiceJp escapes local file root at index ${index}: ${voiceJp}`);
+      throw new Error(`TTS audio escapes local file root at index ${task.index}: ${localPath}`);
     }
 
+    const relativePath = relativeToRoot.split(path.sep).join("/");
     const objectKey = joinUrlPath(args.keyPrefix, relativePath);
     const publicUrl = joinUrlPath(args.publicBaseUrl, objectKey);
     items.push({
-      index,
-      voiceJp,
+      index: task.index,
       localPath,
       relativePath,
       objectKey,
       publicUrl,
+      alreadyPublished:
+        currentVoiceJp === publicUrl && task.needsPublish !== true,
+      task,
     });
   }
 
-  return items;
+  return items.sort((a, b) => a.index - b.index);
 }
 
 function joinUrlPath(...parts) {
@@ -403,27 +446,37 @@ async function main() {
   }
 
   const outputPath = args.output ? path.resolve(process.cwd(), args.output) : storyPath;
+  const storyId = storyIdFromPath(storyPath);
+  const manifestPath = resolveManifestPath(args, storyId);
+  if (!fs.existsSync(manifestPath)) {
+    throw new Error(`ZeroTTS manifest not found: ${manifestPath}`);
+  }
   const story = JSON.parse(fs.readFileSync(storyPath, "utf8"));
   if (!story || !Array.isArray(story.content)) {
     throw new Error("Story JSON must have a content array");
   }
 
-  const items = collectVoiceItems(story, args);
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+  const items = collectVoiceItems(story, args, manifest);
+  const pendingItems = items.filter(item => !item.alreadyPublished);
   const plan = {
     storyPath,
     outputPath,
+    manifestPath,
     localFileRoot: path.resolve(args.localFileRoot),
     bucket: args.bucket || "(skip upload)",
     publicBaseUrl: args.publicBaseUrl,
     keyPrefix: args.keyPrefix,
     voiceItems: items.length,
+    pendingUploads: pendingItems.length,
     skipUpload: args.skipUpload,
+    missingOnly: args.missingOnly,
     dryRun: args.dryRun,
   };
   console.log(JSON.stringify(plan, null, 2));
 
   if (items.length === 0) {
-    console.log("No local VoiceJp URLs found.");
+    console.log("No completed local TTS audio found in the manifest.");
     return;
   }
 
@@ -435,6 +488,8 @@ async function main() {
           localPath: item.localPath,
           objectKey: item.objectKey,
           publicUrl: item.publicUrl,
+          alreadyPublished: item.alreadyPublished,
+          localFileExists: fs.existsSync(item.localPath),
         })),
         null,
         2
@@ -444,16 +499,35 @@ async function main() {
   }
 
   if (!args.skipUpload) {
-    await uploadItems(args, items);
+    await uploadItems(args, pendingItems);
+    for (const item of pendingItems) {
+      item.task.needsPublish = false;
+      item.task.publishedTaskId =
+        item.task.taskId || item.task.mix?.inputsHash;
+      item.task.publishedText =
+        item.task.generatedText ?? item.task.text ?? "";
+      item.task.publishedTextHash =
+        item.task.generatedTextHash ||
+        crypto
+          .createHash("sha256")
+          .update(String(item.task.publishedText))
+          .digest("hex");
+      item.task.publishedAt = new Date().toISOString();
+    }
   }
 
+  let rewritten = 0;
   for (const item of items) {
-    story.content[item.index].VoiceJp = item.publicUrl;
+    if (story.content[item.index].VoiceJp !== item.publicUrl) {
+      story.content[item.index].VoiceJp = item.publicUrl;
+      rewritten++;
+    }
   }
 
   fs.mkdirSync(path.dirname(outputPath), { recursive: true });
   fs.writeFileSync(outputPath, `${JSON.stringify(story, null, 2)}\n`);
-  console.log(`Rewritten ${items.length} VoiceJp URLs: ${outputPath}`);
+  fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+  console.log(`Rewritten ${rewritten} VoiceJp URLs: ${outputPath}`);
 }
 
 main().catch(error => {

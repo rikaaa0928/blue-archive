@@ -593,6 +593,9 @@ importers:
       mitt:
         specifier: ~3.0.1
         version: 3.0.1
+      opencc-js:
+        specifier: 1.4.1
+        version: 1.4.1
       pinia:
         specifier: ^2.3.0
         version: 2.3.0(typescript@5.8.3)(vue@3.5.13(typescript@5.8.3))
@@ -8820,6 +8823,9 @@ packages:
     hasBin: true
     peerDependencies:
       typescript: ^5.x
+
+  opencc-js@1.4.1:
+    resolution: {integrity: sha512-2lPLcrg7cnh1ATSduOxhnk/jq6KlR6w+5Ihl4wF7Z5e5Rva4vxTyugV5rZ7EiUCOZl+EDOLetIix+BhgYDCC+A==}
 
   optionator@0.9.3:
     resolution: {integrity: sha512-JjCoypp+jKn1ttEFExxhetCKeJt9zhAgAve5FXHixTvFDW/5aEktX9bufBKLRRMdU7bNtpLfcGu94B3cdEJgjg==}
@@ -21705,6 +21711,8 @@ snapshots:
       supports-color: 9.4.0
       typescript: 5.8.3
       yargs-parser: 21.1.1
+
+  opencc-js@1.4.1: {}
 
   optionator@0.9.3:
     dependencies:

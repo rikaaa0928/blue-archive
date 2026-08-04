@@ -141,7 +141,11 @@ const StoryRawUnitParserUnit: IStoryRawUnitParserUnit = {
     reg: /#all;([^;\n]+);?/i,
     fn(match: RegExpExecArray, unit: StoryUnit) {
       if (utils.compareCaseInsensive(match[1], "hide")) {
-        unit.type = "effectOnly";
+        // `#all;hide` can follow dialogue in the same raw story unit. Keep the
+        // dialogue type so the text layer is still updated while hiding actors.
+        if (unit.type !== "text") {
+          unit.type = "effectOnly";
+        }
         unit.hide = "all";
       }
       return unit;

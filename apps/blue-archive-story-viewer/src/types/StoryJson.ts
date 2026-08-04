@@ -42,6 +42,7 @@ export interface StoryAbstract {
 }
 
 export interface StoryBriefing {
+  event_id?: number;
   released?: boolean;
   title: CommonStoryTextObject;
   abstract?: CommonStoryTextObject;
