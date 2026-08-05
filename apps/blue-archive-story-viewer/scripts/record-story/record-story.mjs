@@ -9,6 +9,7 @@ function parseArguments(argv) {
   let rawStoryPath = 'groupStory/1101';
   let headless = true;
   let subtitleLanguage = 'cn';
+  let clearBrowserCache = false;
 
   for (const argument of argv) {
     if (argument === '--headless' || argument === '--headless=true') {
@@ -26,6 +27,8 @@ function parseArguments(argv) {
           `Unsupported subtitle language: ${subtitleLanguage} (expected cn or en)`,
         );
       }
+    } else if (argument === '--clear-browser-cache') {
+      clearBrowserCache = true;
     } else if (argument.startsWith('-')) {
       throw new Error(`Unknown option: ${argument}`);
     } else {
@@ -33,7 +36,7 @@ function parseArguments(argv) {
     }
   }
 
-  return { rawStoryPath, headless, subtitleLanguage };
+  return { rawStoryPath, headless, subtitleLanguage, clearBrowserCache };
 }
 
 async function getRecordSelections(rawStoryPath) {
@@ -51,6 +54,7 @@ async function main() {
     rawStoryPath,
     headless,
     subtitleLanguage,
+    clearBrowserCache,
   } = parseArguments(process.argv.slice(2));
 
   const {
@@ -72,6 +76,18 @@ async function main() {
   console.log('Recording pre-selections:', recordSelections);
   console.log('Recording subtitle language:', subtitleLanguage);
 
+  // Keep only Chromium's HTTP/media cache between recording processes. Using a
+  // dedicated disk cache instead of a persistent browser profile lets repeated
+  // CN/EN and cross-chapter recordings reuse immutable CDN assets without
+  // carrying cookies, localStorage, IndexedDB, or other player state forward.
+  const browserCacheDir = path.resolve('.browser-cache');
+  if (clearBrowserCache) {
+    fs.rmSync(browserCacheDir, { recursive: true, force: true });
+    console.log(`Cleared shared browser resource cache: ${browserCacheDir}`);
+  }
+  fs.mkdirSync(browserCacheDir, { recursive: true });
+  console.log(`Using shared browser resource cache: ${browserCacheDir}`);
+
   const browser = await chromium.launch({
     channel: 'chrome',
     headless,
@@ -79,6 +95,7 @@ async function main() {
       '--autoplay-policy=no-user-gesture-required',
       '--window-size=1920,1080',
       '--mute-audio',
+      `--disk-cache-dir=${browserCacheDir}`,
       // 防止无头模式下后台页面动画或定时器被节流降帧
       '--disable-background-timer-throttling',
       '--disable-backgrounding-occluded-windows',

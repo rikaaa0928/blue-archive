@@ -10,8 +10,10 @@ import {
 import {
   fillMissingTextCnFromTextTw,
   markOpenCcTranslationSource,
+  normalizeExistingTextCnCharacterNames,
 } from "./fill-text-cn-from-tw.mjs";
 import { loadTraditionalToSimplifiedCharacterNameMap } from "./ba-character-catalog.mjs";
+import { proofreadStoryTextCnWithLlm } from "./proofread-text-cn-with-llm.mjs";
 
 const __dirname = path.dirname(url.fileURLToPath(import.meta.url));
 const appRoot = path.resolve(__dirname, "..", "..");
@@ -26,6 +28,13 @@ const defaultBaL10nBaseUrl =
   process.env.BA_L10N_BASE_URL || "https://ba-l10n.cnfast.top";
 const defaultBaL10nSourceKind =
   process.env.BA_L10N_SOURCE_KIND || "normal";
+const defaultCnProofreadModel =
+  process.env.CN_PROOFREAD_MODEL || "gemini-3.1-pro-preview";
+const defaultCnProofreadThinkingLevel =
+  process.env.CN_PROOFREAD_THINKING_LEVEL || "MEDIUM";
+const defaultCnProofreadPasses = Number(
+  process.env.CN_PROOFREAD_PASSES || "2",
+);
 const defaultBaL10nCacheRoot = path.join(
   appRoot,
   ".local-files",
@@ -106,6 +115,18 @@ Options:
   --refresh-ba-l10n      refresh the local ba-l10n translation cache
   --no-ba-l10n           do not supplement missing translation fields
   --require-ba-l10n      compatibility flag; ba-l10n is required by default
+  --no-cn-llm-proofread  skip the final Simplified Chinese LLM review
+  --cn-proofread-model <model>
+                         default: CN_PROOFREAD_MODEL or ${defaultCnProofreadModel}
+  --cn-proofread-thinking-level <level>
+                         default: CN_PROOFREAD_THINKING_LEVEL or ${defaultCnProofreadThinkingLevel.toLowerCase()}
+  --cn-proofread-passes <n>
+                         independent review passes, default: ${defaultCnProofreadPasses}
+  --cn-proofread-project <project>
+                         Vertex project id, defaults to environment
+  --cn-proofread-location <location>
+                         Vertex location, defaults to environment or us-central1
+  --refresh-cn-proofread ignore cached Simplified Chinese review responses
   --force, -f            overwrite an existing output
   --dry-run              validate and print summary without writing
   --help, -h             show this help
@@ -130,6 +151,14 @@ function readOptionValue(argv, index, optionName) {
   return value;
 }
 
+function positiveInteger(value, optionName) {
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed <= 0) {
+    throw new Error(`${optionName} must be a positive integer`);
+  }
+  return parsed;
+}
+
 function parseArgs(argv) {
   const args = {
     storyId: "",
@@ -144,6 +173,13 @@ function parseArgs(argv) {
     refreshBaL10n: false,
     useBaL10n: process.env.BA_L10N_DISABLE !== "1",
     requireBaL10n: true,
+    useCnLlmProofread: process.env.CN_PROOFREAD_DISABLE !== "1",
+    cnProofreadModel: defaultCnProofreadModel,
+    cnProofreadThinkingLevel: defaultCnProofreadThinkingLevel,
+    cnProofreadPasses: defaultCnProofreadPasses,
+    cnProofreadProject: "",
+    cnProofreadLocation: "",
+    refreshCnProofread: false,
     force: false,
     dryRun: false,
     help: false,
@@ -186,6 +222,30 @@ function parseArgs(argv) {
         break;
       case "--require-ba-l10n":
         args.requireBaL10n = true;
+        break;
+      case "--no-cn-llm-proofread":
+        args.useCnLlmProofread = false;
+        break;
+      case "--cn-proofread-model":
+        args.cnProofreadModel = readOptionValue(argv, ++index, arg);
+        break;
+      case "--cn-proofread-thinking-level":
+        args.cnProofreadThinkingLevel = readOptionValue(argv, ++index, arg);
+        break;
+      case "--cn-proofread-passes":
+        args.cnProofreadPasses = positiveInteger(
+          readOptionValue(argv, ++index, arg),
+          arg,
+        );
+        break;
+      case "--cn-proofread-project":
+        args.cnProofreadProject = readOptionValue(argv, ++index, arg);
+        break;
+      case "--cn-proofread-location":
+        args.cnProofreadLocation = readOptionValue(argv, ++index, arg);
+        break;
+      case "--refresh-cn-proofread":
+        args.refreshCnProofread = true;
         break;
       case "--force":
       case "-f":
@@ -393,6 +453,18 @@ function printSummary(summary) {
     "still missing on display-text rows without TextTw: " +
     `${summary.openCc.missingTextTwOnDisplayTextRows}`,
   );
+  if (summary.cnProofread) {
+    console.log(
+      `Gemini TextCn review (${summary.cnProofread.model}, ` +
+      `${summary.cnProofread.thinkingLevel.toLowerCase()} thinking): ` +
+      `${summary.cnProofread.netChanges.length} net changes across ` +
+      `${summary.cnProofread.textUnits} rows; ` +
+      `${summary.cnProofread.passes} passes; ` +
+      `${summary.cnProofread.cacheHits}/${summary.cnProofread.batches} cached batches`,
+    );
+  } else if (summary.cnProofreadSkipped) {
+    console.log(`Gemini TextCn review: skipped (${summary.cnProofreadSkipped})`);
+  }
 }
 
 async function supplementFromBaL10n(args, content) {
@@ -463,6 +535,10 @@ async function main() {
     content,
     characterNameMappings,
   );
+  const normalizedCharacterNames = normalizeExistingTextCnCharacterNames(
+    content,
+    characterNameMappings,
+  );
 
   applyStoryTextJpVoiceOverrides(args.storyId, content);
   const rawSourceName = content.some(
@@ -484,6 +560,23 @@ async function main() {
     content,
   };
   markOpenCcTranslationSource(story, openCc);
+  let cnProofread;
+  let cnProofreadSkipped = "";
+  if (args.dryRun) {
+    cnProofreadSkipped = "dry run";
+  } else if (!args.useCnLlmProofread) {
+    cnProofreadSkipped = "disabled by --no-cn-llm-proofread";
+  } else {
+    cnProofread = await proofreadStoryTextCnWithLlm(story, {
+      model: args.cnProofreadModel,
+      thinkingLevel: args.cnProofreadThinkingLevel,
+      passes: args.cnProofreadPasses,
+      project: args.cnProofreadProject,
+      location: args.cnProofreadLocation,
+      refreshCache: args.refreshCnProofread,
+      characterNameMappings,
+    });
+  }
   const summary = {
     storyId: args.storyId,
     schemaPath,
@@ -491,6 +584,9 @@ async function main() {
     outputPath,
     baL10n,
     openCc,
+    normalizedCharacterNames,
+    cnProofread,
+    cnProofreadSkipped,
   };
   printSummary(summary);
 

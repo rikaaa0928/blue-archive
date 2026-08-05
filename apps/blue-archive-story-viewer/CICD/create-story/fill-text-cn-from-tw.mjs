@@ -301,6 +301,32 @@ export function fillMissingTextCnFromTextTw(
   return stats;
 }
 
+export function normalizeExistingTextCnCharacterNames(
+  content,
+  characterNameMappings = new Map(),
+) {
+  if (!Array.isArray(content)) {
+    throw new Error("Story content must be an array");
+  }
+  let changedRows = 0;
+  for (const row of content) {
+    if (!row || typeof row !== "object") continue;
+    const textCn = String(row.TextCn ?? "");
+    if (!textCn.trim()) continue;
+    const sourceNames = `${String(row.TextTw ?? "")}\n` +
+      String(row.TextJp ?? "");
+    const normalized = normalizeTextCnCharacterNames(
+      textCn,
+      sourceNames,
+      characterNameMappings,
+    );
+    if (normalized === textCn) continue;
+    row.TextCn = normalized;
+    changedRows++;
+  }
+  return { changedRows };
+}
+
 export function markOpenCcTranslationSource(story, stats) {
   if (stats.filled > 0) {
     addTranslatorSource(story, "OpenCC tw2sp");

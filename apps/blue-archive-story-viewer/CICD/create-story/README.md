@@ -90,8 +90,59 @@ CDN 表按播放器相同的一小时粒度缓存到 `.local-files/player-data/`
 没有角色立绘或头像的舞台标签也不会进入正文名称映射。
 
 该规则覆盖单名以及正文中的“姓氏 + 名字”组合，例如 `千紗 → 和纱`、
-`杏山千紗 → 杏山和纱`。播放器角色表没有独立姓氏字段，因此当前不维护单姓的
-规范译名映射；单独出现的姓氏只经过 OpenCC 转换，后续如有明确数据源再扩展。
+`杏山千紗 → 杏山和纱`。`ScenarioCharacterNameExcelTable.json` 本身没有姓氏字段；
+LLM 终审会再读取播放器 `public/config/yaml/students.yaml` 中同一角色的
+`familyName`、`name`。映射唯一且至少两个字符的姓氏会与名字一起先做确定性替换，
+因此 `宇沢 → 宇泽` 这类 OpenCC 无法识别的日式字形不交给模型猜测；单字姓/名
+可能与普通正文碰撞，跳过预替换，仅作为带姓氏、名字、全名分类的权威上下文交给
+LLM 判断。这里不读取 story editor 的 `src/assets/students.json`。
+
+确定性转换完成后，导入器默认再调用 `gemini-3.1-pro-preview`，以 `MEDIUM`
+thinking level 对整章 `TextCn` 连续做两遍保守校对。第二遍以第一遍结果为新的
+`currentTextCn`，并强制重新请求模型，不会因为输入没有变化就直接复用第一遍刚写入的
+缓存。实践中第一遍主要修正语义、术语和断裂姓名，第二遍还能补出繁中把女性统一写成
+“他”后遗留的指代问题。可用 `--cn-proofread-passes <n>` 调整导入遍数，独立脚本对应
+`--passes <n>`；默认值均为 2。
+
+日文是语义依据，繁中是翻译参考，播放器角色名映射是姓名规范依据；
+模型只修正有来源或上下文证据的误译、漏译、指代、术语和姓名转换问题，不做文风
+润色。姓名因口吃、停顿、重复、简称或标点而拆开的片段也会结合上下文统一处理，
+因此不依赖为某个角色编写一次性替换规则。每批结果必须覆盖全部目标行，并通过
+换行数、播放器标记和特殊标点序列校验后才能写回。每遍都会逐行独立核对第三人称
+代词，不机械继承繁中“他”；姓名表中的学生角色按女性处理，同时不会误改“其他”或
+“他人”等普通词。
+当前目标行包含 JP、TW 和待校对 CN；前后文与整章压缩概览只提供 JP/TW、说话人
+和索引，避免错误简中上下文误导模型。代码还会拒绝无来源英文及专名间隔号、引号、
+横线等纯标点样式漂移。
+
+模型响应缓存在 `.local-files/cn-proofread-cache/`，逐行修改报告写到
+`.local-files/cn-proofread-reports/`；报告包含每一遍的修改及最终净变化。离线诊断时可以显式加
+`--no-cn-llm-proofread`；正常导入不应跳过终审。已有剧情也可单独运行：
+
+```bash
+pnpm proofread-text-cn public/story/event/10014
+```
+
+两遍 Gemini 输出是待审候选，不是流程终点。随后必须由 LLM agent 做一次最终把关：
+
+1. 逐条对照 `git diff` 中的旧 CN、新 CN、`TextJp` 和 `TextTw`，模型 rationale 只能作
+   提示，不能替代原文证据。
+2. 检查断裂姓名、姓氏、女性指代、官方社团/学校术语、地区用词、漏译和模型过度改写；
+   播放器 `public/config/yaml/students.yaml` 是姓名、所属和社团简中名称的权威来源。
+3. 明确的小问题直接最小幅度修改 `TextCn`；发现模型无依据改变主语、单复数、标点、
+   换行或标签时直接回退该处。不要为了某一行给通用 prompt 添加一次性指令。
+4. 最终再次运行差异校验、残留模式扫描、测试和 `git diff --check`。只有全部通过后，
+   才能进入 TTS、录制或发布流程。
+
+独立终审在处理每个 JSON 前会把原文件备份到系统临时目录。两遍模型完成后先在内存中
+校验一次，只允许 `content[*].TextCn` 与顶层 `proofreader` 变化；原子写回后再由
+`verify-cn-proofread-diff.mjs` 对 tmp 备份和磁盘成品做第二次校验。剧情行数、顺序、
+演出、语音、选择项或任何其他字段变化都会导致命令失败；如果磁盘校验失败，脚本
+会先从备份恢复原文件再退出。也可以手动复核任意两个文件：
+
+```bash
+pnpm verify-cn-proofread-diff /tmp/before.json /path/to/after.json
+```
 
 两套数据不能按数组下标合并。导入器使用规范化后的日文文本和原始顺序匹配，
 支持 HTML ruby 转播放器 ruby，并会拆分、重新合并 `[s]`、`[s1]` 等选择项。
@@ -125,6 +176,10 @@ pnpm import-ba-raw-story 1101 --type group \
 BA_L10N_BASE_URL=https://ba-l10n.cnfast.top
 BA_L10N_SOURCE_KIND=normal
 # BA_L10N_DISABLE=1
+# CN_PROOFREAD_MODEL=gemini-3.1-pro-preview
+# CN_PROOFREAD_THINKING_LEVEL=MEDIUM
+# CN_PROOFREAD_PASSES=2
+# CN_PROOFREAD_DISABLE=1  # 仅用于明确的离线诊断
 ```
 
 常用参数：

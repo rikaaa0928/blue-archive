@@ -2,6 +2,7 @@ import fs from "fs";
 import path from "path";
 import url from "url";
 
+import yaml from "js-yaml";
 import xxhash from "xxhashjs";
 
 const __dirname = path.dirname(url.fileURLToPath(import.meta.url));
@@ -36,6 +37,13 @@ const playerCharacterTableCachePath = path.join(
   "ScenarioCharacterNameExcelTable.json",
 );
 const playerCharacterTableCacheTtlMs = 60 * 60 * 1000;
+const playerStudentsYamlPath = path.join(
+  appRoot,
+  "public",
+  "config",
+  "yaml",
+  "students.yaml",
+);
 
 let playerCharacterTablePromise;
 let traditionalToSimplifiedCharacterNameMapPromise;
@@ -148,7 +156,11 @@ export function buildTraditionalToSimplifiedCharacterNameMap(
   const addCandidate = (traditional, simplified) => {
     const source = String(traditional ?? "").trim();
     const target = String(simplified ?? "").trim();
-    if (!source || !target) return;
+    // A single Han character can be both a valid character name and an
+    // ordinary word fragment. Exact replacement has no way to disambiguate
+    // those cases (for example, a name mapped from "步" inside "脚步").
+    // Leave them to the contextual LLM review instead of corrupting prose.
+    if ([...source].length < 2 || !target) return;
     const targets = candidates.get(source) ?? new Set();
     targets.add(target);
     candidates.set(source, targets);
@@ -187,17 +199,53 @@ export function buildTraditionalToSimplifiedCharacterNameMap(
   );
 }
 
+export function buildPlayerFamilyNameMap(studentRows) {
+  const candidates = new Map();
+  const addCandidate = (sourceValue, targetValue) => {
+    const source = String(sourceValue ?? "").trim();
+    const target = String(targetValue ?? "").trim();
+    if ([...source].length < 2 || !target) return;
+    const targets = candidates.get(source) ?? new Set();
+    targets.add(target);
+    candidates.set(source, targets);
+  };
+  for (const student of studentRows ?? []) {
+    const familyName = student?.familyName;
+    if (!familyName?.cn) continue;
+    addCandidate(familyName.tw, familyName.cn);
+    addCandidate(familyName.jp, familyName.cn);
+  }
+  return new Map(
+    [...candidates]
+      .filter(([, targets]) => targets.size === 1)
+      .map(([source, targets]) => [source, [...targets][0]]),
+  );
+}
+
+function readPlayerStudents() {
+  const students = yaml.load(fs.readFileSync(playerStudentsYamlPath, "utf8"));
+  if (!Array.isArray(students)) {
+    throw new Error(`${playerStudentsYamlPath} must contain an array`);
+  }
+  return students;
+}
+
 export async function loadTraditionalToSimplifiedCharacterNameMap() {
   if (!traditionalToSimplifiedCharacterNameMapPromise) {
     traditionalToSimplifiedCharacterNameMapPromise = Promise.all([
       Promise.resolve(readLocalCharacterTable()),
       loadPlayerCharacterNameTable(),
-    ]).then(([traditionalRows, playerRows]) =>
-      buildTraditionalToSimplifiedCharacterNameMap(
+      Promise.resolve(readPlayerStudents()),
+    ]).then(([traditionalRows, playerRows, students]) => {
+      const mappings = buildTraditionalToSimplifiedCharacterNameMap(
         traditionalRows,
         playerRows,
-      ),
-    );
+      );
+      for (const [source, target] of buildPlayerFamilyNameMap(students)) {
+        if (!mappings.has(source)) mappings.set(source, target);
+      }
+      return mappings;
+    });
   }
   return traditionalToSimplifiedCharacterNameMapPromise;
 }

@@ -1,5 +1,5 @@
 {
-  "proofreader": "",
+  "proofreader": "Gemini gemini-3.1-pro-preview MEDIUM CN review",
   "GroupId": 10014005,
   "translator": "Blue Archive Global + OpenCC tw2sp",
   "content": [
@@ -266,7 +266,7 @@
       "PopupFileName": "",
       "ScriptKr": "3;통신카즈사;01;트리니티 종합학원 1학년. 방과후 디저트부 쿄야마 카즈사입니다.\n#3;greeting",
       "TextJp": "トリニティ総合学園1年生。\n放課後スイーツ部の[ruby=きょうやま]杏山[/ruby]カズサです。",
-      "TextCn": "我是三一综合学园1年级，\n放学后甜点部的杏山和纱。",
+      "TextCn": "我是圣三一综合学园1年级，\n放学后甜点部的杏山和纱。",
       "TextTh": "นักเรียนของโรงเรียนสามัญทรีนิตี้ ชั้นปีที่ 1 ชมรมของหวานหลังเลิกเรียน เคียวยามะ คาซึสะค่ะ",
       "TextTw": "我是三一綜合學園1年級，\n放學後的甜點部的杏山千紗。",
       "TextEn": "It's Kyoyama Kazusa from the After-School Sweets Club, first-year student of Trinity General School.",
@@ -442,7 +442,7 @@
       "PopupFileName": "",
       "ScriptKr": "3;통신카즈사;99;……과연, 이런 타입이구나. 애들이 한 말도 조금은 알겠네.",
       "TextJp": "……ふぅん。\nみんなが言ってた事、ちょっと分かってきたかも。",
-      "TextCn": "……呼。\n大家之前说过的那些事，我似乎也明白了。",
+      "TextCn": "……哼嗯。\n大家之前说过的那些事，我似乎也明白了。",
       "TextTh": "อ่า... เป็นคนแบบนี้สินะ เข้าใจที่พวกเพื่อนๆ บอกขึ้นมาแล้ว",
       "TextTw": "……呼。\n大家之前說過的那些事，我似乎也明白了。",
       "TextEn": "...I get what the others were saying about you now.",

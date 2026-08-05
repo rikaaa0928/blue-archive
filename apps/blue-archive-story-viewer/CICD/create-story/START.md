@@ -212,8 +212,55 @@ public/story/group/1103/1103.json
 名称时会跳过该歧义名称，不凭文本猜测。没有角色立绘/头像的“老师”“声音”等
 舞台标签不进入正文名称映射，避免把普通用词误当角色名。
 单名及“姓氏 + 名字”全名都会命中该规则，例如 `千紗 → 和纱`、
-`杏山千紗 → 杏山和纱`。播放器表没有独立姓氏字段，暂不为单姓维护另一套映射；
-单独出现的姓氏只使用 OpenCC 转换。
+`杏山千紗 → 杏山和纱`。CDN 的 `ScenarioCharacterNameExcelTable.json` 没有姓氏
+字段；预处理会再从播放器 `public/config/yaml/students.yaml` 读取 `familyName` 和
+`name`。映射唯一且至少两个字符的姓氏/名字会先确定性替换，所以
+`宇沢 → 宇泽` 等 OpenCC 无法处理的日式字形无需模型猜测。单字姓/名为避免误中
+普通词而跳过预替换，但仍以姓氏、名字、全名分栏作为 Gemini 权威上下文。该流程
+不读取 story editor 的 `src/assets/students.json`。
+
+上述确定性转换之后，导入器默认使用 `gemini-3.1-pro-preview` 配合 `MEDIUM`
+thinking level 连续做两遍简中校对。第二遍读取第一遍修改后的 CN，并强制重新请求
+模型；即使第一遍没有修改，也不会直接用第一遍刚写入的缓存代替第二次判断。导入器
+可用 `--cn-proofread-passes <n>` 调整遍数，独立校对命令对应 `--passes <n>`，默认
+均为 2。它以
+日文、繁中、当前简中、前后文和播放器角色名表为共同输入，只处理能由这些输入
+证明的客观问题，不做普通润色。通用规则要求模型识别因口吃、停顿、重复、简称或
+标点而拆开的姓名片段，并统一为同一角色的规范译名；不会为单个剧情或角色硬编码
+替换。每一遍还必须逐条复核第三人称代词，不能机械继承繁中泛用的“他”。返回结果
+只有在目标行完整、换行数不变且 `[s]`、ruby 等播放器标记和特殊标点序列完全
+保留时才会写回。
+目标行会提供 JP/TW 和当前待校对 CN；局部前后文与整章概览只提供 JP/TW、说话人
+和索引，不暴露可能有误的非目标 CN。校验还会拒绝无来源英文和纯标点样式漂移。
+
+响应缓存位于 `.local-files/cn-proofread-cache/`，逐行改动报告位于
+`.local-files/cn-proofread-reports/`；报告会保留两遍各自的修改和最终净变化。已有剧情可以只做校对：
+
+```bash
+pnpm proofread-text-cn public/story/event/10014
+```
+
+两遍模型结束后，必须再由 LLM agent 做一次最终把关，不能直接进入配音或录制：
+
+1. 对照 `git diff`、`TextJp`、`TextTw` 逐条审查所有实际改句，不把模型理由当作事实。
+2. 重点检查断裂姓名/姓氏、女性指代、学校和社团规范名、地区词、漏译以及过度改写；
+   姓名、所属和社团简中名称以播放器 `public/config/yaml/students.yaml` 为准。
+3. 小问题直接最小幅度修改 `TextCn`；无依据改变主语、单复数、标点、换行或标记的
+   输出应回退。prompt 只能增加可推广的缺陷规则，不能为单句写固定操作。
+4. 再运行 `verify-cn-proofread-diff.mjs`、残留模式扫描、相关测试和
+   `git diff --check`，确认只有 `TextCn/proofreader` 变化后才算完成。
+
+脚本会先把每个原始 JSON 复制到系统 tmp 目录，并在写回前后各检查一次字段差异。
+唯一允许变化的是 `content[*].TextCn` 和顶层 `proofreader`；其余任意字段变化、
+剧情行增删或顺序变化都会中止处理。写回后的检查若失败，会先从 tmp 备份恢复原
+文件。终端会打印备份目录和每章通过校验的 `TextCn` 改动数。独立校验命令为：
+
+```bash
+pnpm verify-cn-proofread-diff /tmp/before.json /path/to/after.json
+```
+
+需要重新请求模型时使用 `--refresh-cache`。只有明确的离线诊断才在导入时添加
+`--no-cn-llm-proofread`；正常导入应保留终审步骤。
 缓存和远端 ba-l10n 都无法读取时默认终止导入，不再生成缺少翻译的 JSON。
 明确离线导入加 `--no-ba-l10n`，更新缓存加 `--refresh-ba-l10n`。
 `--require-ba-l10n` 仅为兼容旧命令而保留。固定镜像站可以通过 `.env` 的

@@ -11,9 +11,10 @@ STORY_PATH_SET="false"
 HEADLESS="true"
 FORCE_RESELECT="false"
 SUBTITLE_LANGUAGE="all"
+CLEAR_BROWSER_CACHE="false"
 
 usage() {
-  echo "Usage: ./run-record.sh [story-path] [--headless|--no-headless] [--reselect] [--subtitle=all|cn|en]"
+  echo "Usage: ./run-record.sh [story-path] [--headless|--no-headless] [--reselect] [--clear-browser-cache] [--subtitle=all|cn|en]"
   echo "Example: ./run-record.sh groupStory/1102 --no-headless --reselect"
   echo "Example: ./run-record.sh eventStory/10014005"
   echo "Example: ./run-record.sh eventStory/10014005 --subtitle=en"
@@ -30,6 +31,9 @@ for arg in "$@"; do
       ;;
     --force|--reselect)
       FORCE_RESELECT="true"
+      ;;
+    --clear-browser-cache)
+      CLEAR_BROWSER_CACHE="true"
       ;;
     --subtitle=all|--subtitle=cn|--subtitle=en)
       SUBTITLE_LANGUAGE="${arg#*=}"
@@ -149,9 +153,16 @@ record_variant() {
   local trimmed_video
   local sync_metadata
   local trim_seconds
+  local browser_cache_args=()
+
+  if [ "$CLEAR_BROWSER_CACHE" = "true" ]; then
+    browser_cache_args+=("--clear-browser-cache")
+    # With --subtitle=all, clear once before CN and then let EN reuse CN's cache.
+    CLEAR_BROWSER_CACHE="false"
+  fi
 
   echo "Running the recording script for $STORY_PATH (headless: $HEADLESS, subtitles: $language)..."
-  node record-story.mjs "$STORY_PATH" "--headless=$HEADLESS" "--subtitle=$language"
+  node record-story.mjs "$STORY_PATH" "--headless=$HEADLESS" "--subtitle=$language" "${browser_cache_args[@]}"
 
   # Use recording metadata to cut to a stable pre-playback preroll.
   video_name=$(echo "$STORY_PATH" | tr '/' '_')
@@ -195,6 +206,8 @@ record_variant() {
       -movflags +faststart \
       "$trimmed_video"
     echo "✅ Trimmed video successfully saved to: $PROJECT_DIR/scripts/record-story/$trimmed_video"
+    rm -f "$sync_metadata"
+    echo "Deleted consumed recording sync metadata: $sync_metadata"
   fi
 }
 

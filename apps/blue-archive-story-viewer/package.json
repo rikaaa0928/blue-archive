@@ -16,6 +16,8 @@
     "sync-ba-story-data": "node ./CICD/create-story/sync-ba-story-data.mjs",
     "import-ba-raw-story": "node ./CICD/create-story/import-ba-raw-story.mjs",
     "fill-text-cn": "node ./CICD/create-story/fill-text-cn-from-tw.mjs",
+    "proofread-text-cn": "node ./CICD/create-story/proofread-text-cn-with-llm.mjs",
+    "verify-cn-proofread-diff": "node ./CICD/create-story/verify-cn-proofread-diff.mjs",
     "find-event-story": "node ./CICD/create-story/find-event-story.mjs",
     "generate-event-story-index": "node ./CICD/create-story/generate-event-story-index.mjs",
     "enrich-story-llm": "node ./CICD/create-story/enrich-story-with-llm.mjs",

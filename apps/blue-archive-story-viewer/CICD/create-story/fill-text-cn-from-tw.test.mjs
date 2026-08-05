@@ -1,10 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { buildTraditionalToSimplifiedCharacterNameMap } from "./ba-character-catalog.mjs";
+import {
+  buildPlayerFamilyNameMap,
+  buildTraditionalToSimplifiedCharacterNameMap,
+} from "./ba-character-catalog.mjs";
 import {
   convertTextTwToTextCnWithMappedNames,
   fillMissingTextCnFromTextTw,
+  normalizeExistingTextCnCharacterNames,
   normalizeTextCnCharacterNames,
 } from "./fill-text-cn-from-tw.mjs";
 
@@ -82,6 +86,18 @@ test("skips ambiguous names instead of guessing from text alone", () => {
   assert.equal(mappings.has("同名"), false);
 });
 
+test("skips one-character names that collide with ordinary prose", () => {
+  const mappings = buildTraditionalToSimplifiedCharacterNameMap(
+    [{
+      CharacterName: 1,
+      NameTW: "步",
+      SmallPortrait: "Student_Portrait_Ayumu",
+    }],
+    [{ CharacterName: 1, NameCN: "步梦" }],
+  );
+  assert.equal(mappings.has("步"), false);
+});
+
 test("excludes stage labels without a visual character identity", () => {
   const mappings = buildTraditionalToSimplifiedCharacterNameMap(
     [{
@@ -105,6 +121,33 @@ test("normalizes names in an existing curated simplified translation", () => {
     ),
     "终于找到杏山和纱了！",
   );
+});
+
+test("builds deterministic player family-name mappings", () => {
+  const mappings = buildPlayerFamilyNameMap([
+    {
+      familyName: { jp: "宇沢", tw: "宇沢", cn: "宇泽" },
+    },
+    {
+      familyName: { jp: "杏山", tw: "杏山", cn: "杏山" },
+    },
+  ]);
+  assert.equal(mappings.get("宇沢"), "宇泽");
+  assert.equal(mappings.get("杏山"), "杏山");
+});
+
+test("normalizes family and personal names before LLM proofreading", () => {
+  const content = [{
+    TextJp: "宇沢レイサです。",
+    TextTw: "宇沢澪紗。",
+    TextCn: "宇沢玲纱。",
+  }];
+  const result = normalizeExistingTextCnCharacterNames(
+    content,
+    new Map([["宇沢", "宇泽"], ["澪紗", "玲纱"]]),
+  );
+  assert.equal(content[0].TextCn, "宇泽玲纱。");
+  assert.equal(result.changedRows, 1);
 });
 
 test("explicit refresh mode rebuilds existing OpenCC text", () => {

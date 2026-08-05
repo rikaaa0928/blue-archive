@@ -1,5 +1,5 @@
 {
-  "proofreader": "",
+  "proofreader": "Gemini gemini-3.1-pro-preview MEDIUM CN review",
   "GroupId": 10014045,
   "translator": "Blue Archive Global + OpenCC tw2sp",
   "content": [
@@ -737,7 +737,7 @@
       "PopupFileName": "",
       "ScriptKr": "3;아이리;06;카, 카즈사 쨩! 그, 그런 게 아니야! 우리는 그저……!\n#3;stiff",
       "TextJp": "カ、カズサちゃん！？\n私たちは、ただ……！",
-      "TextCn": "千，和纱酱！？\n我们只是想要……！",
+      "TextCn": "和，和纱酱！？\n我们只是想要……！",
       "TextTh": "คะ... คาซึสะจัง! ทะ... ทำไมถึงพูดแบบนั้นล่ะ? พวกเราก็แค่อยากช่วยเองนะ...!",
       "TextTw": "千，千紗醬！？\n我們只是想要……！",
       "TextEn": "K-Kazusa! It's not like that! Let us explain, please.",
@@ -1947,7 +1947,7 @@
       "PopupFileName": "",
       "ScriptKr": "#na;나츠;……혼자 놔두는 게 좋을 거 같네.",
       "TextJp": "……一人にしてあげた方がよさそうだね。",
-      "TextCn": "……让他一个人静一静比较好吧。",
+      "TextCn": "……让她一个人静一静比较好吧。",
       "TextTh": "ปล่อยให้อยู่คนเดียวน่าจะดีกว่านะ...",
       "TextTw": "……讓他一個人靜一靜比較好吧。",
       "TextEn": "...we should let her be alone.",
