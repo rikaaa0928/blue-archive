@@ -647,10 +647,10 @@
       "TextTh": "......",
       "TextTw": "……",
       "TextEn": "...",
-      "VoiceJp": "https://r2.rikaaa0928.moe/ba-story-viewer/tts/event/10014035/lines/0032.mp3",
+      "VoiceJp": "",
       "VoiceId": 0,
       "TeenMode": false,
-      "TextJpVoice": "[shocked]……。"
+      "TextJpVoice": ""
     },
     {
       "GroupId": 10014035,
@@ -667,10 +667,10 @@
       "TextTh": "......?",
       "TextTw": "……？",
       "TextEn": "......?!",
-      "VoiceJp": "https://r2.rikaaa0928.moe/ba-story-viewer/tts/event/10014035/lines/0033.mp3",
+      "VoiceJp": "",
       "VoiceId": 0,
       "TeenMode": false,
-      "TextJpVoice": "[confused]……？"
+      "TextJpVoice": ""
     },
     {
       "GroupId": 10014035,
@@ -706,10 +706,10 @@
       "TextTh": "......",
       "TextTw": "……",
       "TextEn": ".........",
-      "VoiceJp": "https://r2.rikaaa0928.moe/ba-story-viewer/tts/event/10014035/lines/0035.mp3",
+      "VoiceJp": "",
       "VoiceId": 0,
       "TeenMode": false,
-      "TextJpVoice": "[speechless]……。"
+      "TextJpVoice": ""
     },
     {
       "GroupId": 10014035,
@@ -726,10 +726,10 @@
       "TextTh": ".........",
       "TextTw": "…………",
       "TextEn": "............",
-      "VoiceJp": "https://r2.rikaaa0928.moe/ba-story-viewer/tts/event/10014035/lines/0036.mp3",
+      "VoiceJp": "",
       "VoiceId": 0,
       "TeenMode": false,
-      "TextJpVoice": "[sigh]………。"
+      "TextJpVoice": ""
     },
     {
       "GroupId": 10014035,
@@ -746,10 +746,10 @@
       "TextTh": "..........",
       "TextTw": "………………",
       "TextEn": "...............",
-      "VoiceJp": "https://r2.rikaaa0928.moe/ba-story-viewer/tts/event/10014035/lines/0037.mp3",
+      "VoiceJp": "",
       "VoiceId": 0,
       "TeenMode": false,
-      "TextJpVoice": "[heavy sigh]………………。"
+      "TextJpVoice": ""
     },
     {
       "GroupId": 10014035,
