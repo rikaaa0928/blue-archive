@@ -332,6 +332,27 @@ pnpm enrich-story-llm 1103 --type group
 先人工检查小批量结果，再处理全部台词。试听后确认的固定配音稿写入
 `shared-config.mjs` 的 `textJpVoiceOverrides`，不要只改临时产物。
 
+生成配音稿前，脚本会先按**每一篇剧情**扫描全部 `TextJp` ruby 标记。例如同篇
+任意位置出现 `[ruby=きょうやま]杏山[/ruby]` 后，该篇所有 `TextJpVoice` 中的
+`杏山`（包括没有 ruby 的其他台词）都会由代码确定性替换为 `きょうやま`。
+带 ruby 的原位置始终采用自身标注读音，不依赖 LLM 猜测或补标签。
+
+如果同一篇里同一写法对应多个读音，并且还存在没有 ruby 的裸写法，处理会立即
+中止并打印词、候选读音和剧情索引，必须人工确认后才能继续；若冲突写法的每次出现
+都有明确 ruby，则各自按标签展开，不做全篇推断。
+
+已有剧情只需要补做上述规范化时，不要重跑 enrichment 或 LLM。先 dry-run，再写入：
+
+```bash
+pnpm normalize-story-tts-ruby --root public/story/event/10014
+pnpm normalize-story-tts-ruby --root public/story/event/10014 --write
+```
+
+脚本只增量修改需要替换的 `TextJpVoice`，并同步仓库内对应 collective voice 配置
+的 `expected.ttsText` 和扫描摘要；配置原本已过期时会中止，不会覆盖人工配置。
+写入后再次执行 dry-run，结果应为 `changedLineCount: 0`。默认不传 `--root` 会
+扫描整个 `public/story`，任何需要人工判断的歧义都会阻止整批写入。
+
 ### 5. 生成并发布语音
 
 运行任何 TTS 阶段前，LLM agent 必须先完整阅读
@@ -355,9 +376,32 @@ pnpm publish-voice-r2 1103 --type group
 
 TTS 按播放器 `NameCN` 直接读取 `.local-files/ba-characters/<NameCN>/`；目录
 缺失时会停止，不会在生成过程中查询 GameKee 或自动猜测其他名称。
+默认模型为 `zerotts-v3`，执行计划会打印实际模型；只有明确需要兼容其他模型时
+才使用 `--model` 或 `ZERO_TTS_MODEL` 覆盖。
 
 中间文件保存在 `.local-files/tts/group/1103/`。只修改了部分
 `TextJpVoice` 时，使用 `voice-zero-tts ... --changed-only` 后再发布。
+`--changed-only` 以 manifest 中上次成功发布的文本为基准，因此 ruby 规范化只会
+重新生成实际变更的行。若变更行是已配置的 collective 台词，会重新生成全部成员
+并重新混音；仅修改成员名单、参考音色或混音参数而文本不变时，应显式使用
+`--force` 或 `--regenerate-collective-member`，不能只依赖文本增量筛选。
+
+```bash
+pnpm voice-zero-tts 10014025 \
+  --type event \
+  --stage all \
+  --changed-only
+
+pnpm publish-voice-r2 10014025 --type event
+
+# 收口检查：应分别看到 selectedVoiceLines: 0 和 pendingUploads: 0
+pnpm voice-zero-tts 10014025 \
+  --type event \
+  --stage all \
+  --changed-only \
+  --dry-run
+pnpm publish-voice-r2 10014025 --type event --dry-run
+```
 
 如果完整流程已经结束，只需要补齐当前 `VoiceJp` 为空的语音，可使用严格局部
 模式。它会处理普通角色、显式确认的匿名 NPC、已解析到真实角色的 `???` 台词和
@@ -404,20 +448,16 @@ node CICD/create-story/preselect-options.mjs groupStory/1103 --force
 ```
 
 录制始终使用剧情中的日文配音。字幕通过 `--subtitle=all|cn|en` 选择。
-默认值是 `all`，因此不传参数时会顺序生成“日文配音 + 中文字幕”和
-“日文配音 + 英文字幕”两个版本：
+默认值是 `cn`，因此不传参数时只生成“日文配音 + 中文字幕”版本：
 
 ```bash
 ./run-record.sh groupStory/1103
-
-# 与默认行为相同
-./run-record.sh groupStory/1103 --subtitle=all
 ```
 
-只生成中文字幕版本时使用：
+需要显式生成中英文两个版本时使用 `all`；脚本会保持单进程，先中文后英文：
 
 ```bash
-./run-record.sh groupStory/1103 --subtitle=cn
+./run-record.sh groupStory/1103 --subtitle=all
 ```
 
 需要“日文配音 + 英文字幕”时使用：
@@ -443,12 +483,23 @@ node CICD/create-story/preselect-options.mjs groupStory/1103 --force
 ./run-record.sh groupStory/1103 --reselect
 ```
 
-中英文版本会共用一次构建和同一个 Vite 服务，但为了避免两个 1920×1080
-录制任务争抢 CPU/GPU 而导致掉帧，视频会按中文、英文的顺序依次录制。
+使用 `--subtitle=all` 时，中英文版本会共用一次构建和同一个 Vite 服务，但为了
+避免两个 1920×1080 录制任务争抢 CPU/GPU 而导致掉帧，视频会按中文、英文的
+顺序依次录制。
 
-成品位于 `scripts/record-story/videos/`。中文字幕版本保持原文件名，例如
-`groupStory_1103_trimmed.mp4`；英文字幕版本会增加 `_en` 后缀，例如
-`groupStory_1103_en_trimmed.mp4`，不会覆盖中文字幕版本。
+成品存放在 `scripts/record-story/videos/`。event、favor、group、mini 等带集合 ID
+的类型使用 `videos/<类型>/<集合ID>/<剧情ID>-<标题>.mp4`；main、other 等扁平
+类型使用 `videos/<类型>/<剧情ID>-<标题>.mp4`。标题取当前篇 `#title` 行
+`TextCn` 第一个分号后的正文。当前篇没有标题时，会按同集合中的实际剧情 ID 排序
+向前继承最近标题并追加 `(2)`、`(3)`，不假设 ID 固定递增 5；找不到可继承标题
+时仅使用剧情 ID。文件名中的非法字符会安全替换。英文字幕版本增加 `_en` 后缀，
+不会覆盖中文字幕版本；现有旧版扁平文件不会自动移动或删除。
+
+例如 `eventStory/10014015` 没有自己的标题、上一条有标题时，会输出为：
+
+```text
+videos/event/10014/10014015-向我冲过来的家伙(2).mp4
+```
 
 ### 8. 验证成品
 
@@ -456,10 +507,10 @@ node CICD/create-story/preselect-options.mjs groupStory/1103 --force
 ffprobe -v error \
   -show_entries format=duration,size:stream=codec_name,codec_type,width,height \
   -of json \
-  scripts/record-story/videos/groupStory_1103_trimmed.mp4
+  scripts/record-story/videos/group/1103/1103.mp4
 
 ffmpeg -v error \
-  -i scripts/record-story/videos/groupStory_1103_trimmed.mp4 \
+  -i scripts/record-story/videos/group/1103/1103.mp4 \
   -f null -
 
 git diff --check
@@ -581,7 +632,7 @@ version of the same person, not a second physical character`。
 | 强制重建后旧翻译和配音是否保留 | 不会；`--force` 完全以原始 Table 重建，需要重新走翻译、配音稿和 TTS 流程 |
 | 重建后想继续 changed-only TTS | 旧 manifest 按旧行号索引，先迁移或重建 manifest，不能直接运行发布脚本 |
 | `TextCn` 为空 | 查看导入摘要的 `ba-l10n unmatched`；尝试 `--refresh-ba-l10n`，确认版本差异后再人工补齐 |
-| ruby 被 TTS 读出 | `TextJp` 可保留 ruby 供显示；`TextJpVoice` 必须使用规范化文本或人工 override |
+| ruby 被 TTS 读出 | `TextJp` 保留 ruby 供显示；先运行 `normalize-story-tts-ruby`，逐篇收集读音并替换全部对应裸写法；多读音且存在裸写法时必须人工处理 |
 | 配音情绪不理想 | 在 `textJpVoiceOverrides` 添加精确覆盖，再跑 changed-only TTS |
 | 自动选择错误 | 强制运行 `preselect-options.mjs ... --force` |
 | 选择后浮层不消失 | 检查播放器选择动画和 UI 回调，不要绕过 UI 直接发底层选择事件 |
@@ -598,6 +649,7 @@ Blue Archive Global Table
   -> public/story/...json
   -> generate-event-story-index.mjs（活动剧情）
   -> enrich-story-with-llm.mjs
+  -> normalize-story-tts-ruby.mjs（已有剧情的无 LLM 增量迁移）
   -> voice-zero-tts.mjs
   -> publish-voice-r2.mjs
   -> preselect-options.mjs
@@ -613,8 +665,12 @@ Blue Archive Global Table
 - `process-story.mjs`：依次执行原始导入、配音稿生成、TTS 和 R2 发布。
   它要求 `ScenarioScriptDBSchema.json` 已经存在，不负责构建 Docker 镜像、
   下载或更新 Table。
-- `enrich-story-with-llm.mjs`：生成或补齐 `TextJpVoice`。
-- `voice-zero-tts.mjs`：准备参考音频、生成并下载 MP3，不写公网 URL。
+- `enrich-story-with-llm.mjs`：生成或补齐 `TextJpVoice`；调用 LLM 前按整篇剧情
+  展开 ruby，并在写回时再次执行同一确定性规范化。
+- `normalize-story-tts-ruby.mjs`：不调用 LLM，增量规范化已有 `TextJpVoice`，并
+  同步对应 collective voice 配置；默认 dry-run，传 `--write` 才写入。
+- `voice-zero-tts.mjs`：默认使用 `zerotts-v3`，准备参考音频、生成并下载 MP3，
+  不写公网 URL。
 - `COLLECTIVE_VOICE_CONFIG.md`：规定 LLM agent 在 TTS 前检查集体发言和 `???`
   未知说话人、维护逐行配置，并由生成端强制选择真实角色参考音或逐成员混音。
 - `publish-voice-r2.mjs`：上传 MP3，并将公网 URL 写入 `VoiceJp`。
@@ -622,6 +678,8 @@ Blue Archive Global Table
 - `shared-config.mjs`：保存人工配音稿、角色词表和录制预选。
 - `run-record.sh`：构建播放器、启动 Vite、录像并裁剪 MP4。
 - `scripts/record-story/record-story.mjs`：Playwright 录制与音视频封装底层实现。
+- `scripts/record-story/record-output-path.mjs`：解析中文标题、无标题续篇编号和
+  `类型/集合ID/文件名` 输出路径，供录制器与裁剪脚本共同使用。
 
 数据规则稳定且凭据齐全后可以一键处理：
 

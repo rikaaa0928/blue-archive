@@ -10,7 +10,7 @@ STORY_PATH="groupStory/1101"
 STORY_PATH_SET="false"
 HEADLESS="true"
 FORCE_RESELECT="false"
-SUBTITLE_LANGUAGE="all"
+SUBTITLE_LANGUAGE="cn"
 CLEAR_BROWSER_CACHE="false"
 
 usage() {
@@ -18,7 +18,7 @@ usage() {
   echo "Example: ./run-record.sh groupStory/1102 --no-headless --reselect"
   echo "Example: ./run-record.sh eventStory/10014005"
   echo "Example: ./run-record.sh eventStory/10014005 --subtitle=en"
-  echo "Default subtitles: Chinese and English, recorded sequentially (--subtitle=all)"
+  echo "Default subtitles: Chinese only (--subtitle=cn)"
 }
 
 for arg in "$@"; do
@@ -148,7 +148,7 @@ fi
 cd "$PROJECT_DIR/scripts/record-story"
 record_variant() {
   local language="$1"
-  local video_name
+  local output_base
   local final_video
   local trimmed_video
   local sync_metadata
@@ -165,13 +165,11 @@ record_variant() {
   node record-story.mjs "$STORY_PATH" "--headless=$HEADLESS" "--subtitle=$language" "${browser_cache_args[@]}"
 
   # Use recording metadata to cut to a stable pre-playback preroll.
-  video_name=$(echo "$STORY_PATH" | tr '/' '_')
-  if [ "$language" != "cn" ]; then
-    video_name="${video_name}_${language}"
-  fi
-  final_video="videos/${video_name}.webm"
-  trimmed_video="videos/${video_name}_trimmed.mp4"
-  sync_metadata="videos/${video_name}.sync.json"
+  output_base=$(node record-output-path.mjs "$STORY_PATH" "--subtitle=$language")
+  final_video="videos/${output_base}.webm"
+  trimmed_video="videos/${output_base}.mp4"
+  sync_metadata="videos/${output_base}.sync.json"
+  mkdir -p "$(dirname "$trimmed_video")"
 
   if [ -f "$final_video" ]; then
     if [ ! -s "$sync_metadata" ]; then
@@ -205,7 +203,7 @@ record_variant() {
       -b:a 192k \
       -movflags +faststart \
       "$trimmed_video"
-    echo "✅ Trimmed video successfully saved to: $PROJECT_DIR/scripts/record-story/$trimmed_video"
+    echo "✅ Final video successfully saved to: $PROJECT_DIR/scripts/record-story/$trimmed_video"
     rm -f "$sync_metadata"
     echo "Deleted consumed recording sync metadata: $sync_metadata"
   fi

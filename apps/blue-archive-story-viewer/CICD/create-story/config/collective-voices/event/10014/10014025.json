@@ -3,7 +3,7 @@
   "source": {
     "storyPath": "public/story/event/10014/10014025.json",
     "contentLength": 138,
-    "scanDigest": "sha256:966bf757dfceafd69c99c72965b8d7939cc8c6832eee549ee8568cdb87f1d0cd"
+    "scanDigest": "sha256:609beab51ae2a7df3e1380cd4e1b51b1897ea876b1f2b2023771e6e8a6fa8ecd"
   },
   "lines": [
     {
@@ -13,7 +13,7 @@
       "expected": {
         "speaker": "???",
         "scriptKr": "#na;???;아하하하하!! 트리니티의 심판자, 이 우자와 레이사로부터 숨을 수는 없습니다. 이 악당들!!",
-        "ttsText": "[laughing][loud]ハッハッハー！[heroic tone]トリニティの審判者、宇沢レイサから隠れることなどできません！"
+        "ttsText": "[laughing][loud]ハッハッハー！[heroic tone]トリニティの審判者、うざわレイサから隠れることなどできません！"
       },
       "resolution": "character",
       "resolvedSpeaker": "레이사",

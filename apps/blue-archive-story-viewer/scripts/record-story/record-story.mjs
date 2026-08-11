@@ -4,6 +4,7 @@ import fs from 'fs';
 import { execFileSync } from 'child_process';
 import { pathToFileURL } from 'url';
 import { normalizeStoryPath } from '../../CICD/create-story/story-path.mjs';
+import { resolveRecordOutputPath } from './record-output-path.mjs';
 
 function parseArguments(argv) {
   let rawStoryPath = 'groupStory/1101';
@@ -104,19 +105,22 @@ async function main() {
   });
 
   const videosDir = path.resolve('videos');
-  if (!fs.existsSync(videosDir)) {
-    fs.mkdirSync(videosDir);
-  }
+  const output = resolveRecordOutputPath(rawStoryPath, { subtitleLanguage });
+  const outputDirectory = path.resolve(
+    videosDir,
+    path.dirname(output.relativeBasePath),
+  );
+  fs.mkdirSync(outputDirectory, { recursive: true });
 
   // Interrupted recordings leave Playwright video files and streamed audio
   // chunks behind. Clear only those known temporary names before every
   // attempt so retries start clean without touching completed outputs.
-  const staleRecordingCache = fs.readdirSync(videosDir).filter(fileName =>
+  const staleRecordingCache = fs.readdirSync(outputDirectory).filter(fileName =>
     /^temp_audio_\d+\.webm$/.test(fileName) ||
     /^page@[0-9a-f]+\.webm$/i.test(fileName),
   );
   for (const fileName of staleRecordingCache) {
-    fs.unlinkSync(path.join(videosDir, fileName));
+    fs.unlinkSync(path.join(outputDirectory, fileName));
   }
   if (staleRecordingCache.length > 0) {
     console.log(
@@ -124,13 +128,12 @@ async function main() {
     );
   }
 
-  const subtitleSuffix = subtitleLanguage === 'cn' ? '' : `_${subtitleLanguage}`;
-  const finalDest = path.join(
-    videosDir,
-    `${rawStoryPath.replace(/\//g, '_')}${subtitleSuffix}.webm`,
-  );
+  const finalDest = path.resolve(videosDir, `${output.relativeBasePath}.webm`);
   const syncMetadataDest = finalDest.replace(/\.webm$/, '.sync.json');
-  const tempAudioDest = path.join(videosDir, `temp_audio_${Date.now()}.webm`);
+  const tempAudioDest = path.join(
+    outputDirectory,
+    `temp_audio_${Date.now()}.webm`,
+  );
 
   if (fs.existsSync(finalDest)) fs.unlinkSync(finalDest);
   if (fs.existsSync(syncMetadataDest)) fs.unlinkSync(syncMetadataDest);
@@ -140,7 +143,7 @@ async function main() {
   const context = await browser.newContext({
     viewport: { width: 1920, height: 1080 },
     recordVideo: {
-      dir: videosDir,
+      dir: outputDirectory,
       size: { width: 1920, height: 1080 },
     },
     bypassCSP: true,

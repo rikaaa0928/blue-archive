@@ -3,7 +3,7 @@
   "source": {
     "storyPath": "public/story/event/10014/10014085.json",
     "contentLength": 94,
-    "scanDigest": "sha256:5f8977e9c6297bccce1fce5ae7a1228321432db68ac108573a81812ea01d4923"
+    "scanDigest": "sha256:607e70795f00a48253c46b83289290d7e2338e79bf875827258a6280889592d6"
   },
   "lines": [
     {
@@ -13,7 +13,7 @@
       "expected": {
         "speaker": "???",
         "scriptKr": "#na;???;하하!! 역시 돌아왔군요, 기다리고 있었습니다! 쿄야마 카즈사!!",
-        "ttsText": "[laughing tone]ハッハッハ！！[excited]やはり戻ってきましたか！\n待ってましたよ！杏山カズサ！！"
+        "ttsText": "[laughing tone]ハッハッハ！！[excited]やはり戻ってきましたか！\n待ってましたよ！きょうやまカズサ！！"
       },
       "resolution": "character",
       "resolvedSpeaker": "레이사",

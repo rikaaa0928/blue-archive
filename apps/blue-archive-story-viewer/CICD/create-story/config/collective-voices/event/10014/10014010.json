@@ -3,7 +3,7 @@
   "source": {
     "storyPath": "public/story/event/10014/10014010.json",
     "contentLength": 59,
-    "scanDigest": "sha256:f7fdc5facf6259d24d4d2cae6e2dde05a9cbac22e10673f0e1a5241d39063a92"
+    "scanDigest": "sha256:bc8b41dcee1f439b6b970426c311752722d2f1ad8b17b0ec3efccbb6aec5d1bb"
   },
   "lines": [
     {
@@ -13,7 +13,7 @@
       "expected": {
         "speaker": "???",
         "scriptKr": "3;레이사;00\n#na;???;드디어 찾았습니다! 더는 피할 수 없어요, 쿄야마 카즈사!!!\n#3;black\n#all;hide",
-        "ttsText": "[excited] [shouting]ついに見つけた！[loud]もう逃げられませんよ、杏山カズサ！！！"
+        "ttsText": "[excited] [shouting]ついに見つけた！[loud]もう逃げられませんよ、きょうやまカズサ！！！"
       },
       "resolution": "character",
       "resolvedSpeaker": "레이사",
@@ -26,7 +26,7 @@
       "expected": {
         "speaker": "???",
         "scriptKr": "#na;???;이 <우자와 레이사>와의 결투를 피할 순 없습니다!! 얌전히 도전장을 받으세요!",
-        "ttsText": "[dramatic] [shouting]大人しく挑戦状を受けなさい！\n[loud]この私「宇沢レイサ」との決闘を避けられると思わないでください！"
+        "ttsText": "[dramatic] [shouting]大人しく挑戦状を受けなさい！\n[loud]この私「うざわレイサ」との決闘を避けられると思わないでください！"
       },
       "resolution": "character",
       "resolvedSpeaker": "레이사",

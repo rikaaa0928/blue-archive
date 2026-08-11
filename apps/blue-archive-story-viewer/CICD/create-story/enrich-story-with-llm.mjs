@@ -11,6 +11,11 @@ import {
   voiceTagExamples,
   normalizeTextJpVoice,
 } from "./shared-config.mjs";
+import {
+  assertNoAmbiguousUnannotatedRuby,
+  replaceRubySurfaceTextWithReadings,
+  scanRubyMappings,
+} from "./tts-text-normalization.mjs";
 
 const __dirname = path.dirname(url.fileURLToPath(import.meta.url));
 const appRoot = path.resolve(__dirname, "..", "..");
@@ -33,6 +38,8 @@ Rules:
 - TextJpVoice must stay Japanese. Do not translate it.
 - TextJpVoice should preserve the original Japanese wording and line breaks,
   only inserting bracket tags like [sigh], [angry], [whisper], [short pause].
+- Ruby annotations in TextJp have already been replaced with their phonetic
+  readings in code. Preserve those readings exactly in TextJpVoice.
 - Voice tags support free-form natural-language English descriptions. The
   provided examples are inspiration, not a whitelist. Invent precise tags when
   they better express the intended delivery, while keeping them useful for TTS.
@@ -234,11 +241,11 @@ function resolveLocation(args) {
   );
 }
 
-function collectTextUnits(story) {
+function collectTextUnits(story, rubyMappings) {
   return story.content
     .map((unit, index) => ({
       index,
-      textJp: String(unit.TextJp ?? ""),
+      textJp: replaceRubySurfaceTextWithReadings(unit.TextJp, rubyMappings),
       textCn: String(unit.TextCn ?? ""),
       textJpVoice: String(unit.TextJpVoice ?? ""),
       hasTextJpVoice: Object.hasOwn(unit, "TextJpVoice"),
@@ -606,7 +613,12 @@ async function main() {
     String(story.GroupId),
     story.content,
   );
-  const textUnits = collectTextUnits(story);
+  const rubyScan = scanRubyMappings(
+    story.content.map(unit => unit.TextJp),
+  );
+  assertNoAmbiguousUnannotatedRuby(rubyScan, storyPath);
+  const rubyMappings = rubyScan.mappings;
+  const textUnits = collectTextUnits(story, rubyMappings);
   let targets = textUnits.filter(unit =>
     shouldProcess(unit, args.force, lockedOverrideIndices),
   );
@@ -704,9 +716,11 @@ async function main() {
 
     for (const item of items) {
       const unit = story.content[item.index];
-      // Enforce the no-parentheses contract in code instead of trusting model
-      // output alone.
-      unit.TextJpVoice = normalizeTextJpVoice(item.TextJpVoice);
+      // Enforce deterministic text normalization contracts in code instead of
+      // trusting model output alone.
+      unit.TextJpVoice = normalizeTextJpVoice(
+        replaceRubySurfaceTextWithReadings(item.TextJpVoice, rubyMappings),
+      );
       if (!unit.TextJpVoice) {
         unit.VoiceJp = "";
       }

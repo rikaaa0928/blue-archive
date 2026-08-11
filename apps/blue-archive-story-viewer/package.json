@@ -21,6 +21,7 @@
     "find-event-story": "node ./CICD/create-story/find-event-story.mjs",
     "generate-event-story-index": "node ./CICD/create-story/generate-event-story-index.mjs",
     "enrich-story-llm": "node ./CICD/create-story/enrich-story-with-llm.mjs",
+    "normalize-story-tts-ruby": "node ./CICD/create-story/normalize-story-tts-ruby.mjs",
     "voice-zero-tts": "node ./CICD/create-story/voice-zero-tts.mjs",
     "download-ba-character": "node ./CICD/create-story/download-ba-character.mjs",
     "publish-voice-r2": "node ./CICD/create-story/publish-voice-r2.mjs"

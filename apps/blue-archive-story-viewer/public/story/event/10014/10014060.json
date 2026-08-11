@@ -771,7 +771,7 @@
       "VoiceJp": "https://r2.rikaaa0928.moe/ba-story-viewer/tts/event/10014060/lines/0038.mp3",
       "VoiceId": 0,
       "TeenMode": false,
-      "TextJpVoice": "[serious]……宇沢に何かあったの？"
+      "TextJpVoice": "[serious]……うざわに何かあったの？"
     },
     {
       "GroupId": 10014060,
@@ -1244,7 +1244,7 @@
       "VoiceJp": "https://r2.rikaaa0928.moe/ba-story-viewer/tts/event/10014060/lines/0062.mp3",
       "VoiceId": 0,
       "TeenMode": false,
-      "TextJpVoice": "[determined]……宇沢は、どこ？"
+      "TextJpVoice": "[determined]……うざわは、どこ？"
     }
   ]
 }

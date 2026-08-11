@@ -21,7 +21,7 @@ loadEnvFile(path.join(repoRoot, ".env"));
 
 const defaultCharacterRoot = path.resolve(appRoot, ".local-files", "ba-characters");
 const defaultTtsBaseUrl = "https://yiling.top/api/tts";
-const defaultModel = "zerotts-v1";
+const defaultModel = "zerotts-v3";
 const npcSpeakerKey = "__anonymous_npc__";
 const npcReferenceCharacterName = "NPC Neutral Raw Experiment v4";
 const npcReferenceDirectoryName = "npc-neutral-v4";
@@ -1746,6 +1746,7 @@ async function main() {
 
   const plan = {
     stage: args.stage,
+    model: args.model,
     storyPath,
     manifestPath,
     localFileRoot: path.resolve(args.localFileRoot),

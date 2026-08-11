@@ -534,7 +534,7 @@
       "VoiceJp": "https://r2.rikaaa0928.moe/ba-story-viewer/tts/event/10014030/lines/0026.mp3",
       "VoiceId": 0,
       "TeenMode": false,
-      "TextJpVoice": "[dramatic]……[ruby=きょうやま]杏山[/ruby]カズサの名の下にね。"
+      "TextJpVoice": "[dramatic]……きょうやまカズサの名の下にね。"
     },
     {
       "GroupId": 10014030,
@@ -1285,7 +1285,7 @@
       "VoiceJp": "https://r2.rikaaa0928.moe/ba-story-viewer/tts/event/10014030/lines/0064.mp3",
       "VoiceId": 0,
       "TeenMode": false,
-      "TextJpVoice": "[hesitant] 私たちはその宇沢レイサという方がどういう人なのかあまり知りませんが……。"
+      "TextJpVoice": "[hesitant] 私たちはそのうざわレイサという方がどういう人なのかあまり知りませんが……。"
     },
     {
       "GroupId": 10014030,
