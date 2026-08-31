@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 2,
+  "source": {
+    "storyPath": "public/story/event/10002/10002005.json",
+    "contentLength": 296,
+    "scanDigest": "sha256:1789cb20ef54cadfe55cc0b7e971a6903327b996d6a040422090ce75c7a0dac8"
+  },
+  "lines": [
+    {
+      "storyIndex": 130,
+      "kind": "unknown-speaker",
+      "status": "ready",
+      "expected": {
+        "speaker": "???",
+        "scriptKr": "3;츠루기;05\n#3;black\n#3;closeup\n#na;???;청춘-------------!!!!\n#fontsize;80",
+        "ttsText": "[screaming]青春んんんーーーーーーー！！！！"
+      },
+      "resolution": "character",
+      "resolvedSpeaker": "츠루기",
+      "evidence": "ScriptKr has 3;츠루기;05 before the text, setting up Tsurugi on stage 3. The subsequent actions match Tsurugi."
+    }
+  ]
+}

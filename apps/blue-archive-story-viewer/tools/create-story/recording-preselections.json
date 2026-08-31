@@ -1,0 +1,422 @@
+{
+  "eventStory/10002005": [
+    {
+      "storyIndex": 12,
+      "selectionGroup": 1
+    },
+    {
+      "storyIndex": 195,
+      "selectionGroup": 0
+    },
+    {
+      "storyIndex": 220,
+      "selectionGroup": 0
+    },
+    {
+      "storyIndex": 228,
+      "selectionGroup": 3
+    },
+    {
+      "storyIndex": 266,
+      "selectionGroup": 6
+    }
+  ],
+  "eventStory/10002010": [
+    {
+      "storyIndex": 16,
+      "selectionGroup": 1
+    },
+    {
+      "storyIndex": 23,
+      "selectionGroup": 0
+    }
+  ],
+  "eventStory/10014005": [
+    {
+      "storyIndex": 7,
+      "selectionGroup": 2
+    },
+    {
+      "storyIndex": 18,
+      "selectionGroup": 3
+    },
+    {
+      "storyIndex": 30,
+      "selectionGroup": 5
+    }
+  ],
+  "eventStory/10014010": [
+    {
+      "storyIndex": 1,
+      "selectionGroup": 2
+    },
+    {
+      "storyIndex": 10,
+      "selectionGroup": 3
+    },
+    {
+      "storyIndex": 19,
+      "selectionGroup": 5
+    },
+    {
+      "storyIndex": 36,
+      "selectionGroup": 7
+    }
+  ],
+  "eventStory/10014015": [
+    {
+      "storyIndex": 32,
+      "selectionGroup": 2
+    },
+    {
+      "storyIndex": 62,
+      "selectionGroup": 3
+    }
+  ],
+  "eventStory/10014020": [
+    {
+      "storyIndex": 7,
+      "selectionGroup": 2
+    },
+    {
+      "storyIndex": 29,
+      "selectionGroup": 0
+    },
+    {
+      "storyIndex": 50,
+      "selectionGroup": 4
+    },
+    {
+      "storyIndex": 67,
+      "selectionGroup": 0
+    },
+    {
+      "storyIndex": 93,
+      "selectionGroup": 5
+    },
+    {
+      "storyIndex": 97,
+      "selectionGroup": 7
+    },
+    {
+      "storyIndex": 104,
+      "selectionGroup": 0
+    },
+    {
+      "storyIndex": 122,
+      "selectionGroup": 10
+    }
+  ],
+  "eventStory/10014025": [
+    {
+      "storyIndex": 30,
+      "selectionGroup": 2
+    },
+    {
+      "storyIndex": 34,
+      "selectionGroup": 3
+    },
+    {
+      "storyIndex": 39,
+      "selectionGroup": 5
+    },
+    {
+      "storyIndex": 62,
+      "selectionGroup": 7
+    },
+    {
+      "storyIndex": 102,
+      "selectionGroup": 9
+    },
+    {
+      "storyIndex": 112,
+      "selectionGroup": 11
+    },
+    {
+      "storyIndex": 117,
+      "selectionGroup": 13
+    },
+    {
+      "storyIndex": 129,
+      "selectionGroup": 0
+    },
+    {
+      "storyIndex": 131,
+      "selectionGroup": 0
+    }
+  ],
+  "eventStory/10014030": [
+    {
+      "storyIndex": 5,
+      "selectionGroup": 0
+    },
+    {
+      "storyIndex": 9,
+      "selectionGroup": 2
+    },
+    {
+      "storyIndex": 33,
+      "selectionGroup": 3
+    },
+    {
+      "storyIndex": 38,
+      "selectionGroup": 5
+    },
+    {
+      "storyIndex": 61,
+      "selectionGroup": 7
+    },
+    {
+      "storyIndex": 76,
+      "selectionGroup": 9
+    },
+    {
+      "storyIndex": 87,
+      "selectionGroup": 0
+    },
+    {
+      "storyIndex": 89,
+      "selectionGroup": 11
+    }
+  ],
+  "eventStory/10014035": [
+    {
+      "storyIndex": 3,
+      "selectionGroup": 2
+    },
+    {
+      "storyIndex": 27,
+      "selectionGroup": 3
+    },
+    {
+      "storyIndex": 38,
+      "selectionGroup": 5
+    },
+    {
+      "storyIndex": 48,
+      "selectionGroup": 7
+    },
+    {
+      "storyIndex": 61,
+      "selectionGroup": 9
+    },
+    {
+      "storyIndex": 65,
+      "selectionGroup": 11
+    },
+    {
+      "storyIndex": 82,
+      "selectionGroup": 13
+    }
+  ],
+  "eventStory/10014040": [
+    {
+      "storyIndex": 18,
+      "selectionGroup": 0
+    },
+    {
+      "storyIndex": 33,
+      "selectionGroup": 3
+    },
+    {
+      "storyIndex": 46,
+      "selectionGroup": 6
+    },
+    {
+      "storyIndex": 58,
+      "selectionGroup": 0
+    },
+    {
+      "storyIndex": 87,
+      "selectionGroup": 9
+    },
+    {
+      "storyIndex": 137,
+      "selectionGroup": 13
+    }
+  ],
+  "eventStory/10014045": [
+    {
+      "storyIndex": 19,
+      "selectionGroup": 1
+    },
+    {
+      "storyIndex": 74,
+      "selectionGroup": 0
+    }
+  ],
+  "eventStory/10014050": [
+    {
+      "storyIndex": 3,
+      "selectionGroup": 1
+    },
+    {
+      "storyIndex": 14,
+      "selectionGroup": 3
+    },
+    {
+      "storyIndex": 35,
+      "selectionGroup": 0
+    },
+    {
+      "storyIndex": 43,
+      "selectionGroup": 5
+    },
+    {
+      "storyIndex": 53,
+      "selectionGroup": 7
+    },
+    {
+      "storyIndex": 74,
+      "selectionGroup": 9
+    }
+  ],
+  "eventStory/10014055": [
+    {
+      "storyIndex": 16,
+      "selectionGroup": 2
+    },
+    {
+      "storyIndex": 22,
+      "selectionGroup": 4
+    },
+    {
+      "storyIndex": 33,
+      "selectionGroup": 5
+    },
+    {
+      "storyIndex": 44,
+      "selectionGroup": 7
+    },
+    {
+      "storyIndex": 61,
+      "selectionGroup": 0
+    }
+  ],
+  "eventStory/10014060": [
+    {
+      "storyIndex": 13,
+      "selectionGroup": 1
+    },
+    {
+      "storyIndex": 34,
+      "selectionGroup": 3
+    },
+    {
+      "storyIndex": 40,
+      "selectionGroup": 0
+    },
+    {
+      "storyIndex": 42,
+      "selectionGroup": 5
+    }
+  ],
+  "eventStory/10014065": [
+    {
+      "storyIndex": 5,
+      "selectionGroup": 1
+    },
+    {
+      "storyIndex": 27,
+      "selectionGroup": 4
+    },
+    {
+      "storyIndex": 55,
+      "selectionGroup": 5
+    }
+  ],
+  "eventStory/10014070": [
+    {
+      "storyIndex": 69,
+      "selectionGroup": 1
+    },
+    {
+      "storyIndex": 132,
+      "selectionGroup": 3
+    },
+    {
+      "storyIndex": 137,
+      "selectionGroup": 5
+    },
+    {
+      "storyIndex": 159,
+      "selectionGroup": 7
+    }
+  ],
+  "eventStory/10014075": [
+    {
+      "storyIndex": 21,
+      "selectionGroup": 1
+    },
+    {
+      "storyIndex": 54,
+      "selectionGroup": 3
+    },
+    {
+      "storyIndex": 88,
+      "selectionGroup": 5
+    },
+    {
+      "storyIndex": 112,
+      "selectionGroup": 7
+    }
+  ],
+  "eventStory/10014080": [
+    {
+      "storyIndex": 6,
+      "selectionGroup": 1
+    },
+    {
+      "storyIndex": 12,
+      "selectionGroup": 3
+    },
+    {
+      "storyIndex": 28,
+      "selectionGroup": 5
+    },
+    {
+      "storyIndex": 82,
+      "selectionGroup": 8
+    }
+  ],
+  "eventStory/10014085": [
+    {
+      "storyIndex": 30,
+      "selectionGroup": 2
+    },
+    {
+      "storyIndex": 37,
+      "selectionGroup": 3
+    },
+    {
+      "storyIndex": 58,
+      "selectionGroup": 5
+    }
+  ],
+  "groupStory/1102": [
+    {
+      "storyIndex": 34,
+      "selectionGroup": 0
+    },
+    {
+      "storyIndex": 38,
+      "selectionGroup": 1
+    },
+    {
+      "storyIndex": 42,
+      "selectionGroup": 3
+    },
+    {
+      "storyIndex": 46,
+      "selectionGroup": 5
+    },
+    {
+      "storyIndex": 58,
+      "selectionGroup": 0
+    },
+    {
+      "storyIndex": 62,
+      "selectionGroup": 0
+    }
+  ]
+}

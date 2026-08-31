@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { normalizeStoryPath } from '../../CICD/create-story/story-path.mjs';
+import { normalizeStoryPath } from '../../tools/create-story/story-path.mjs';
 
 const moduleDirectory = path.dirname(fileURLToPath(import.meta.url));
 const defaultAppRoot = path.resolve(moduleDirectory, '..', '..');
@@ -79,16 +79,18 @@ function resolveDisplayTitle(storyFile, storyId) {
 
 export function resolveRecordOutputPath(
   rawStoryPath,
-  { subtitleLanguage = 'cn', appRoot = defaultAppRoot } = {},
+  { subtitleLanguage = 'cn', appRoot = defaultAppRoot, storyFile = '' } = {},
 ) {
   const normalizedStory = normalizeStoryPath(rawStoryPath);
-  const storyFile = resolveStoryFile(appRoot, normalizedStory);
-  if (!fs.existsSync(storyFile)) {
-    throw new Error(`Story file not found: ${storyFile}`);
+  const resolvedStoryFile = storyFile
+    ? path.resolve(storyFile)
+    : resolveStoryFile(appRoot, normalizedStory);
+  if (!fs.existsSync(resolvedStoryFile)) {
+    throw new Error(`Story file not found: ${resolvedStoryFile}`);
   }
 
   const title = sanitizeFileName(
-    resolveDisplayTitle(storyFile, normalizedStory.id),
+    resolveDisplayTitle(resolvedStoryFile, normalizedStory.id),
   );
   const subtitleSuffix = subtitleLanguage === 'cn'
     ? ''
@@ -101,7 +103,7 @@ export function resolveRecordOutputPath(
 
   return {
     ...normalizedStory,
-    storyFile,
+    storyFile: resolvedStoryFile,
     title,
     fileStem,
     relativeBasePath: path.join(...directorySegments, fileStem),
@@ -113,15 +115,19 @@ function main() {
   const rawStoryPath = argv.find(argument => !argument.startsWith('-'));
   if (!rawStoryPath) {
     throw new Error(
-      'Usage: node record-output-path.mjs <story-path> [--subtitle=cn|en]',
+      'Usage: node record-output-path.mjs <story-path> [--subtitle=cn|en] [--story-file=/path/to/story.json]',
     );
   }
   const subtitleArgument = argv.find(argument => argument.startsWith('--subtitle='));
   const subtitleLanguage = subtitleArgument
     ? subtitleArgument.slice('--subtitle='.length)
     : 'cn';
+  const storyFileArgument = argv.find(argument => argument.startsWith('--story-file='));
+  const storyFile = storyFileArgument
+    ? storyFileArgument.slice('--story-file='.length)
+    : '';
   process.stdout.write(
-    resolveRecordOutputPath(rawStoryPath, { subtitleLanguage }).relativeBasePath,
+    resolveRecordOutputPath(rawStoryPath, { subtitleLanguage, storyFile }).relativeBasePath,
   );
 }
 

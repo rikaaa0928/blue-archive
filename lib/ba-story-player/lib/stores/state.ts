@@ -11,6 +11,7 @@ const savePlayingSetting = JSON.parse(localStorage.getItem(PlayingSettingKey) ||
 const UiState: UiState = {
   autoMode: ref(false),
   tabActivated: ref(false),
+  runtimeMuted: ref(false),
   volume: ref({
     masterVolume: saveVolume.masterVolume ?? 1,
     bgmVolume: saveVolume.bgmVolume || 0.3,
@@ -41,6 +42,7 @@ export function disposeUiState() {
   };
   UiState.autoMode.value = false;
   UiState.tabActivated.value = false;
+  UiState.runtimeMuted.value = false;
 }
 
 export function useUiState() {

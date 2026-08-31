@@ -14,6 +14,7 @@ type PlayerSetting = {
 type RawUiState = {
   autoMode: boolean; // 是否是自动播放模式
   tabActivated: boolean; // 标签页是否处于活动状态,目前用于hack pixi-sound的bgm重合bug
+  runtimeMuted: boolean; // 单个播放器实例的临时静音状态，不持久化
   volume: Volume;
   playing: PlayerSetting;
 }

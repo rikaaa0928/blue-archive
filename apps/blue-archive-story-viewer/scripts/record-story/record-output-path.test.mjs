@@ -31,6 +31,27 @@ test('uses the current story title from the Chinese title row', t => {
   );
 });
 
+test('uses an explicit assembly story without requiring public/story', t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'record-output-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const assembly = path.join(root, 'workspace', 'assembly', 'story.json');
+  fs.mkdirSync(path.dirname(assembly), { recursive: true });
+  fs.writeFileSync(assembly, JSON.stringify({ content: [{
+    ScriptKr: '#title;제1화;여름 바다의 소녀들',
+    TextCn: '第1话;夏日海边的少女们',
+  }] }));
+
+  const output = resolveRecordOutputPath('eventStory/10002010', {
+    appRoot: root,
+    storyFile: assembly,
+  });
+  assert.equal(output.storyFile, assembly);
+  assert.equal(
+    output.relativeBasePath,
+    path.join('event', '10002', '10002010-夏日海边的少女们'),
+  );
+});
+
 test('inherits the nearest earlier title by sorted id and numbers each part', t => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'record-output-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));

@@ -9,13 +9,13 @@ ROOT_DIR=$(dirname "$(dirname "$PROJECT_DIR")")
 STORY_PATH="groupStory/1101"
 STORY_PATH_SET="false"
 HEADLESS="true"
-FORCE_RESELECT="false"
 SUBTITLE_LANGUAGE="cn"
 CLEAR_BROWSER_CACHE="false"
+STORY_FILE=""
 
 usage() {
-  echo "Usage: ./run-record.sh [story-path] [--headless|--no-headless] [--reselect] [--clear-browser-cache] [--subtitle=all|cn|en]"
-  echo "Example: ./run-record.sh groupStory/1102 --no-headless --reselect"
+  echo "Usage: ./run-record.sh [story-path] [--story-file=/path/to/story.json] [--headless|--no-headless] [--clear-browser-cache] [--subtitle=all|cn|en]"
+  echo "Example: ./run-record.sh groupStory/1102 --no-headless"
   echo "Example: ./run-record.sh eventStory/10014005"
   echo "Example: ./run-record.sh eventStory/10014005 --subtitle=en"
   echo "Default subtitles: Chinese only (--subtitle=cn)"
@@ -29,11 +29,15 @@ for arg in "$@"; do
     --no-headless|--headed|--headless=false)
       HEADLESS="false"
       ;;
-    --force|--reselect)
-      FORCE_RESELECT="true"
-      ;;
     --clear-browser-cache)
       CLEAR_BROWSER_CACHE="true"
+      ;;
+    --story-file=*)
+      STORY_FILE="${arg#*=}"
+      if [ -z "$STORY_FILE" ]; then
+        echo "--story-file requires a JSON path" >&2
+        exit 1
+      fi
       ;;
     --subtitle=all|--subtitle=cn|--subtitle=en)
       SUBTITLE_LANGUAGE="${arg#*=}"
@@ -64,14 +68,14 @@ for arg in "$@"; do
   esac
 done
 
-# Resolve all selection pages before doing the comparatively expensive build.
-# Existing valid choices are reused and single-option pages are automatic.
-echo "Checking recording pre-selections for $STORY_PATH..."
-PRESELECT_ARGS=("$STORY_PATH")
-if [ "$FORCE_RESELECT" = "true" ]; then
-  PRESELECT_ARGS+=("--force")
+# Fail before builds, browser startup, or output cleanup. Recording is read-only
+# with respect to route selection; configure defaults in a separate step.
+echo "Validating recording defaults for $STORY_PATH..."
+VALIDATE_ARGS=("$STORY_PATH")
+if [ -n "$STORY_FILE" ]; then
+  VALIDATE_ARGS+=("--story-file=$STORY_FILE")
 fi
-node "$PROJECT_DIR/CICD/create-story/preselect-options.mjs" "${PRESELECT_ARGS[@]}"
+node "$PROJECT_DIR/tools/create-story/validate-recording-selections.mjs" "${VALIDATE_ARGS[@]}"
 
 # 编译 ba-story-player 确保底层文件的修改生效
 echo "Rebuilding ba-story-player..."
@@ -162,10 +166,14 @@ record_variant() {
   fi
 
   echo "Running the recording script for $STORY_PATH (headless: $HEADLESS, subtitles: $language)..."
-  node record-story.mjs "$STORY_PATH" "--headless=$HEADLESS" "--subtitle=$language" "${browser_cache_args[@]}"
+  local story_file_args=()
+  if [ -n "$STORY_FILE" ]; then
+    story_file_args+=("--story-file=$STORY_FILE")
+  fi
+  node record-story.mjs "$STORY_PATH" "--headless=$HEADLESS" "--subtitle=$language" "${story_file_args[@]}" "${browser_cache_args[@]}"
 
   # Use recording metadata to cut to a stable pre-playback preroll.
-  output_base=$(node record-output-path.mjs "$STORY_PATH" "--subtitle=$language")
+  output_base=$(node record-output-path.mjs "$STORY_PATH" "--subtitle=$language" "${story_file_args[@]}")
   final_video="videos/${output_base}.webm"
   trimmed_video="videos/${output_base}.mp4"
   sync_metadata="videos/${output_base}.sync.json"

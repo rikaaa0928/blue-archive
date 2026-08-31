@@ -112,10 +112,12 @@ export function getResourcesUrl(type: ResourcesTypes, arg: string): string {
         ? `${dataUrl}/spine/${filename}/${filename}${superSampling}/${filename}.skel`
         : `${dataUrl}/spine/${filename}/${filename}.skel`;
       // ch*/np* and generic Sukeban sprites exist only on
-      // ba-all-data-spine42 (Spine 4.2). Most named character sprites live on
-      // ba-all-data; spine42 has stale 3.8 copies for those named characters.
+      // ba-all-data-spine42 (Spine 4.2). The swimsuit Sukeban NPCs use
+      // schoolGirl* prefab names but live in the same Spine 4.2 repository.
+      // Most named character sprites live on ba-all-data; spine42 has stale
+      // 3.8 copies for those named characters.
       // FIXME: CI intervention needed
-      if (/^(?:(?:ch|np)\d+|sukeban_)/i.test(id ?? "")) {
+      if (/^(?:(?:ch|np)\d+|sukeban_|schoolgirl\d+_sukebanswim_)/i.test(id ?? "")) {
         return getSpine42Url(skelPath);
       }
       return rewritePath(skelPath);

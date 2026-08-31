@@ -44,6 +44,8 @@ export type PlayerProps = {
   storySummary: StorySummary;
   startFullScreen?: boolean;
   recordMode?: boolean;
+  /** Temporarily mute this player without changing persisted volume settings. */
+  muted?: boolean;
   /** Initialize all layers and audio, but wait for startDeferredPlayback(). */
   deferPlayback?: boolean;
   /** SelectionGroup keyed by the zero-based story content index. */
@@ -61,6 +63,7 @@ export type PlayerProps = {
 const props = withDefaults(defineProps<PlayerProps>(), {
   startFullScreen: false,
   recordMode: false,
+  muted: false,
   deferPlayback: false,
   useMp3: false,
 });
@@ -70,6 +73,15 @@ storySummary.value.summary = storySummary.value.summary.replaceAll(
   props.userName
 );
 const emit = defineEmits(["end", "error", "initiated"]);
+
+const { tabActivated, autoMode, runtimeMuted } = useUiState();
+watch(
+  () => props.muted,
+  muted => {
+    runtimeMuted.value = muted;
+  },
+  { immediate: true }
+);
 
 const RECORD_OPTION_WAIT_MS = 2000;
 let recordOptionTimer: ReturnType<typeof setTimeout> | undefined;
@@ -399,8 +411,6 @@ onMounted(async () => {
   });
   firstMount = true;
 });
-
-const { tabActivated, autoMode } = useUiState();
 
 autoMode.value = props.deferPlayback ? false : props.recordMode || false;
 

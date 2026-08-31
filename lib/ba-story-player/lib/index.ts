@@ -16,7 +16,7 @@ import { L2DInit } from "./layers/l2dLayer/L2D";
 import { bgInit } from "@/layers/bgLayer";
 import { characterInit } from "@/layers/characterLayer";
 import { effectInit } from "@/layers/effectLayer";
-import { soundInit } from "@/layers/soundLayer";
+import { preloadAudioUrls, soundInit } from "@/layers/soundLayer";
 import { translate } from "@/layers/translationLayer";
 import { buildStoryIndexStackRecord } from "@/layers/translationLayer/utils";
 import { disposeUiState, useUiState } from "@/stores/state";
@@ -613,7 +613,7 @@ export async function init(
       //开始发送事件
       eventEmitter.init();
     });
-  });
+  }, errorCallback);
 }
 
 /**
@@ -621,7 +621,9 @@ export async function init(
  */
 export const resourcesLoader = {
   loadTaskList: [] as Promise<unknown>[],
+  audioLoadTaskList: [] as Promise<void>[],
   loadedList: [] as string[],
+  audioUrls: new Set<string>(),
   popupImageResolutionTasks: new Map<string, Promise<string>>(),
   /**
    * 初始化, 预先加载表资源供翻译层使用
@@ -636,15 +638,15 @@ export const resourcesLoader = {
     // this.loader.add('https://yuuka.cdn.diyigemt.com/image/ba-all-data/UIs/03_Scenario/01_Background/BG_CS_PR_16.jpg',
     //   'https://yuuka.cdn.diyigemt.com/image/ba-all-data/UIs/03_Scenario/01_Background/BG_CS_PR_16.jpg'
     // )
+    this.audioUrls.clear();
     this.addEmotionResources();
     this.addFXResources();
     this.addOtherSounds();
     this.addBGEffectImgs();
-    const audioUrls: string[] = [];
     if (playerStore.curL2dConfig) {
       for (const que of playerStore.curL2dConfig.playQue) {
         for (const sound of que.sounds || []) {
-          audioUrls.push(utils.getResourcesUrl("sound", sound.fileName));
+          this.audioUrls.add(utils.getResourcesUrl("sound", sound.fileName));
         }
       }
     }
@@ -659,19 +661,14 @@ export const resourcesLoader = {
       if (unit.audio) {
         //添加bgm资源
         if (unit.audio.bgm?.url) {
-          audioUrls.push(unit.audio.bgm.url);
+          this.audioUrls.add(unit.audio.bgm.url);
         }
         if (unit.audio.soundUrl) {
-          audioUrls.push(unit.audio.soundUrl);
+          this.audioUrls.add(unit.audio.soundUrl);
         }
         if (unit.audio.voiceJPUrl) {
-          audioUrls.push(unit.audio.voiceJPUrl);
+          this.audioUrls.add(unit.audio.voiceJPUrl);
         }
-        this.checkAndAdd(unit.audio.bgm?.url);
-
-        //添加sound
-        this.checkAndAdd(unit.audio.soundUrl);
-        this.checkAndAdd(unit.audio.voiceJPUrl);
       }
       //添加背景图片
       this.checkAndAdd(unit.bg, "url");
@@ -688,23 +685,51 @@ export const resourcesLoader = {
         playerStore.setL2DSpineUrl(unit.l2d.spineUrl);
       }
     }
+    this.audioLoadTaskList.push(preloadAudioUrls([...this.audioUrls]));
   },
 
   /**
    * 加载资源并在加载完成后执行callback
    * @param callback
    */
-  load(callback: () => void) {
+  load(callback: () => void, errorCallback: (error: Error) => void) {
     let hasLoad = false;
-    Promise.allSettled(this.loadTaskList).then(() => {
+    const settleQueuedTasks = async () => {
+      // Spine parsing can discover L2D voices while the first batch is loading.
+      // Drain again until no newly discovered resource tasks remain.
+      while (
+        this.loadTaskList.length > 0 ||
+        this.audioLoadTaskList.length > 0
+      ) {
+        const tasks = this.loadTaskList.splice(0, this.loadTaskList.length);
+        const audioTasks = this.audioLoadTaskList.splice(
+          0,
+          this.audioLoadTaskList.length
+        );
+        await Promise.all([
+          Promise.allSettled(tasks),
+          Promise.all(audioTasks),
+        ]);
+      }
+    };
+    settleQueuedTasks().then(() => {
       //当chrome webgl inspector打开时可能导致callback被执行两次
       if (!hasLoad) {
-        this.loadTaskList.splice(0, this.loadTaskList.length);
         this.loadedList.splice(0, this.loadedList.length);
+        this.audioUrls.clear();
         this.popupImageResolutionTasks.clear();
         hasLoad = true;
         callback();
       }
+    }).catch(error => {
+      this.loadTaskList.splice(0, this.loadTaskList.length);
+      this.audioLoadTaskList.splice(0, this.audioLoadTaskList.length);
+      this.loadedList.splice(0, this.loadedList.length);
+      this.audioUrls.clear();
+      this.popupImageResolutionTasks.clear();
+      errorCallback(
+        error instanceof Error ? error : new Error(String(error))
+      );
     });
   },
 
@@ -802,12 +827,8 @@ export const resourcesLoader = {
     // 添加情绪声音资源
     for (const emotionName of playerStore.emotionResourcesTable.keys()) {
       const emotionSoundName = `SFX_Emoticon_Motion_${emotionName}`;
-      // eslint-disable-next-line max-len
-      this.loadTaskList.push(
-        checkloadAssetAlias(
-          emotionSoundName,
-          utils.getResourcesUrl("emotionSound", emotionSoundName)
-        )
+      this.audioUrls.add(
+        utils.getResourcesUrl("emotionSound", emotionSoundName)
       );
     }
   },
@@ -836,8 +857,8 @@ export const resourcesLoader = {
       })
       .map(it => utils.getResourcesUrl("l2dVoice", it.name));
     // 预载 L2D 语音资源
-    for (const audio of audios) {
-      this.loadTaskList.push(checkloadAssetAlias(audio, audio));
+    if (audios.length) {
+      this.audioLoadTaskList.push(preloadAudioUrls(audios));
     }
   },
 
@@ -847,7 +868,7 @@ export const resourcesLoader = {
   addOtherSounds() {
     const otherSoundUrls = getOtherSoundUrls();
     for (const url of otherSoundUrls) {
-      this.loadTaskList.push(checkloadAssetAlias(url, url));
+      this.audioUrls.add(url);
     }
   },
 

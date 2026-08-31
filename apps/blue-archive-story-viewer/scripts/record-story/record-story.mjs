@@ -2,8 +2,7 @@ import { chromium } from 'playwright';
 import path from 'path';
 import fs from 'fs';
 import { execFileSync } from 'child_process';
-import { pathToFileURL } from 'url';
-import { normalizeStoryPath } from '../../CICD/create-story/story-path.mjs';
+import { normalizeStoryPath } from '../../tools/create-story/story-path.mjs';
 import { resolveRecordOutputPath } from './record-output-path.mjs';
 
 function parseArguments(argv) {
@@ -11,6 +10,7 @@ function parseArguments(argv) {
   let headless = true;
   let subtitleLanguage = 'cn';
   let clearBrowserCache = false;
+  let storyFile = '';
 
   for (const argument of argv) {
     if (argument === '--headless' || argument === '--headless=true') {
@@ -30,6 +30,11 @@ function parseArguments(argv) {
       }
     } else if (argument === '--clear-browser-cache') {
       clearBrowserCache = true;
+    } else if (argument.startsWith('--story-file=')) {
+      storyFile = path.resolve(argument.slice('--story-file='.length));
+      if (!fs.existsSync(storyFile)) {
+        throw new Error(`Recording story file does not exist: ${storyFile}`);
+      }
     } else if (argument.startsWith('-')) {
       throw new Error(`Unknown option: ${argument}`);
     } else {
@@ -37,17 +42,17 @@ function parseArguments(argv) {
     }
   }
 
-  return { rawStoryPath, headless, subtitleLanguage, clearBrowserCache };
+  return { rawStoryPath, headless, subtitleLanguage, clearBrowserCache, storyFile };
 }
 
 async function getRecordSelections(rawStoryPath) {
-  const sharedConfigPath = path.resolve(
-    '../../CICD/create-story/shared-config.mjs',
+  const selectionsPath = path.resolve(
+    '../../tools/create-story/recording-preselections.json',
   );
-  const configUrl = pathToFileURL(sharedConfigPath);
-  configUrl.searchParams.set('cacheBust', String(Date.now()));
-  const { storyPreSelections } = await import(configUrl.href);
-  return storyPreSelections?.get(rawStoryPath) || [];
+  const selectionsByStory = fs.existsSync(selectionsPath)
+    ? JSON.parse(fs.readFileSync(selectionsPath, 'utf8'))
+    : {};
+  return selectionsByStory[rawStoryPath] || [];
 }
 
 async function main() {
@@ -56,6 +61,7 @@ async function main() {
     headless,
     subtitleLanguage,
     clearBrowserCache,
+    storyFile,
   } = parseArguments(process.argv.slice(2));
 
   const {
@@ -71,6 +77,9 @@ async function main() {
     subtitleLanguage,
     captureHandshake: '1',
   });
+  if (storyFile) {
+    searchParams.set('storyUrl', `/@fs${storyFile}`);
+  }
   const url = `http://127.0.0.1:5173/${recordUrlPath}?${searchParams}`;
 
   console.log('Launching browser for:', `http://127.0.0.1:5173/${recordUrlPath}`);
@@ -105,7 +114,10 @@ async function main() {
   });
 
   const videosDir = path.resolve('videos');
-  const output = resolveRecordOutputPath(rawStoryPath, { subtitleLanguage });
+  const output = resolveRecordOutputPath(rawStoryPath, {
+    subtitleLanguage,
+    storyFile,
+  });
   const outputDirectory = path.resolve(
     videosDir,
     path.dirname(output.relativeBasePath),
@@ -230,11 +242,16 @@ async function main() {
   console.log('Waiting for story data and the automatic capture handshake...');
   await page.waitForFunction(
     () =>
-      typeof window.__START_STORY_RECORDING__ === 'function' &&
-      window.__STORY_PLAYER_READY__ === true,
+      Boolean(window.__STORY_ERROR__) ||
+      (typeof window.__START_STORY_RECORDING__ === 'function' &&
+      window.__STORY_PLAYER_READY__ === true),
     undefined,
     { timeout: 60000 },
   );
+  const loadError = await page.evaluate(() => window.__STORY_ERROR__);
+  if (loadError) {
+    throw new Error(`Recording story failed to load: ${loadError}`);
+  }
   if (!(await page.locator('.loading-container').isVisible())) {
     throw new Error(
       'Player loading layer disappeared before the recorder was ready',

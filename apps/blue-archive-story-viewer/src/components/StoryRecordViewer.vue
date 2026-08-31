@@ -131,15 +131,23 @@ onBeforeUnmount(() => {
   delete (window as any).__START_STORY_RECORDING__;
 });
 
-getStoryJson(
-  storyQueryType.value,
-  { storyId: storyId.value },
-  () => {}
-).then(res => {
+const storyUrl = typeof route.query.storyUrl === "string" ? route.query.storyUrl : "";
+const storyRequest = storyUrl
+  ? fetch(storyUrl).then(async response => {
+      if (!response.ok) throw new Error(`Failed to load recording story: HTTP ${response.status}`);
+      return { story: await response.json() };
+    })
+  : getStoryJson(
+      storyQueryType.value,
+      { storyId: storyId.value },
+      () => {}
+    );
+
+storyRequest.then(res => {
   story.value = res.story as StoryContent;
   ready.value = true;
   showPlayer.value = true;
-});
+}).catch(handleStoryError);
 
 getStorySummary(storyQueryType.value, {
   directoryId: storyId.value,
