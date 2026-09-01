@@ -35,6 +35,33 @@ export function parseScenarioScriptSpeakers(unitOrScript) {
   return { speakers, dialogueSpeaker };
 }
 
+export function replaceScenarioDialogueSpeaker(
+  unitOrScript,
+  nextSpeaker,
+  sourceSpeaker = "",
+) {
+  const script = typeof unitOrScript === "string"
+    ? unitOrScript
+    : String(unitOrScript?.ScriptKr ?? "");
+  const replacement = String(nextSpeaker ?? "").trim();
+  const expected = String(sourceSpeaker ?? "").trim();
+  if (!replacement) return script;
+
+  return script.split("\n").map(rawLine => {
+    const patterns = [
+      /^(\s*[1-5];)([^;\n]+)(;[^;\n]+;)([^;\n]+)(.*)$/u,
+      /^(\s*#na;)([^;\n]+)(;)([^;\n]+)(.*)$/iu,
+    ];
+    for (const pattern of patterns) {
+      const match = pattern.exec(rawLine);
+      if (!match) continue;
+      if (expected && match[2].trim() !== expected) return rawLine;
+      return `${match[1]}${replacement}${match[3]}${match[4]}${match[5]}`;
+    }
+    return rawLine;
+  }).join("\n");
+}
+
 export function inferScenarioRole(unitOrScript) {
   const script = typeof unitOrScript === "string"
     ? unitOrScript

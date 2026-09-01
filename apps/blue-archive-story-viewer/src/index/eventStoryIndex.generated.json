@@ -36,7 +36,28 @@
           "TextTh": "เพื่อซึรุกิที่เบื่อหน่ายกับชีวิตประจำวันและเพื่ออาซึสะที่ไม่เคยไปทะเลมาก่อน\nเหล่าสมาชิกชมรมทวงความยุติธรรมและชมรมชั้นเรียนเสริมจึงได้จัดทริปไป\nทะเลขึ้น",
           "TextEn": "Azusa has never seen the ocean. Tsurugi is suffering from burnout. The Justice Task Force and Make-Up Work Club decide to take them to the beach for their own good.",
           "TextTw": "為了從未看過海邊的梓，以及對一成不變的生活感到厭煩的弦生，實現正義部與補課部的學生們前往海邊。"
-        }
+        },
+        "next": 10002010
+      },
+      {
+        "title": {
+          "TextJp": "夏の海辺とお邪魔虫（１）",
+          "TextCn": "夏日海边的碍事鬼（１）",
+          "TextKr": "여름 휴가의 방해요소 1",
+          "TextTh": "อุปสรรคในวันหยุดฤดูร้อน 1",
+          "TextEn": "Summer Vacation Distractions Part 1",
+          "TextTw": "夏日海邊的礙事鬼（１）"
+        },
+        "story_id": 10002010,
+        "abstract": {
+          "TextJp": "ハスミから受け取ったリストに従いまずは砂のお城を作るヒフミだったが、完成した直後、乱入してきたスケバンたちによって破壊されてしまう。それに激昂したツルギとアズサが銃を構え、戦闘へと突入することに。",
+          "TextCn": "努力想要实践从莲见那边得到的清单的日富美。但是太妹们太碍事，鹤城也爆发了。",
+          "TextKr": "하스미에게 받은 리스트를 성실하게 수행하려는 히후미. 하지만 불량배들이 방해하고 츠루기는 폭발한다.",
+          "TextTh": "ฮิฟุมิพยายามเพื่อทำตามรายการที่ฮาสุมิเขียนให้เธออย่างขยันขันแข็ง\nแต่ว่าพวกแยงกี้สาวได้เข้ามาขัดขวางและซึรุกิก็อาละวาด",
+          "TextEn": "Hifumi tries to diligently carry out the task Hasumi gave her. However, Tsurugi loses control when thugs interfere.",
+          "TextTw": "努力想要實踐從蓮實那邊得到的清單的日步美。但是太妹們太礙事，弦生也爆發了。"
+        },
+        "previous": 10002005
       }
     ]
   },

@@ -23,6 +23,7 @@ import {
   isCollectiveScenarioSpeaker,
   isUnknownScenarioSpeaker,
   parseScenarioScriptSpeakers,
+  replaceScenarioDialogueSpeaker,
 } from "../../create-story/scenario-script-speakers.mjs";
 import { resolveRecordOutputPath } from "../../../scripts/record-story/record-output-path.mjs";
 import {
@@ -507,11 +508,12 @@ async function productionSpeakerScan(workspace) {
   };
 }
 
-function replaceScriptSpeaker(unit, nextSpeaker) {
-  const parts = String(unit.ScriptKr ?? "").split(";");
-  if (parts.length < 2) return;
-  parts[1] = nextSpeaker;
-  unit.ScriptKr = parts.join(";");
+function replaceScriptSpeaker(unit, sourceSpeaker, nextSpeaker) {
+  unit.ScriptKr = replaceScenarioDialogueSpeaker(
+    unit.ScriptKr,
+    nextSpeaker,
+    sourceSpeaker,
+  );
 }
 
 function prepareProductionVoiceInput(workspace, { requireScript = true } = {}) {
@@ -568,7 +570,9 @@ function prepareProductionVoiceInput(workspace, { requireScript = true } = {}) {
       }
       continue;
     }
-    for (const storyIndex of applicableIndices) replaceScriptSpeaker(story.content[storyIndex], nextSpeaker);
+    for (const storyIndex of applicableIndices) {
+      replaceScriptSpeaker(story.content[storyIndex], item.sourceSpeaker, nextSpeaker);
+    }
   }
   const config = buildCollectiveVoiceConfig(workspace, story, speakerReviews);
   return { production, story, config };
