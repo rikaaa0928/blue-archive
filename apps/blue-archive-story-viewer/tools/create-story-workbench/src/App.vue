@@ -21,7 +21,7 @@
           </option>
         </select>
       </label>
-      <button class="series-entry full" @click="showSeriesBatch = true">▦ 活动系列批处理</button>
+      <button class="series-entry full" @click="showSeriesBatch = true">▦ {{ batchSeriesType === 'main' ? '主线批处理' : '活动系列批处理' }}</button>
       <button class="ghost full" @click="showCreate = !showCreate">＋ 新建工作区</button>
       <form v-if="showCreate" class="create-form" @submit.prevent="createWorkspace">
         <select v-model="createForm.type">
@@ -141,7 +141,8 @@
       </template>
       <SeriesBatchPanel
         v-if="toolMode === 'production' && showSeriesBatch"
-        :initial-query="status?.workspace.identity.type === 'event' ? status.workspace.identity.storyId : ''"
+        :series-type="batchSeriesType"
+        :initial-query="batchInitialQuery"
         @close="showSeriesBatch = false"
         @open-workspace="openBatchWorkspace"
       />
@@ -200,6 +201,10 @@ const productionStages = [
 ];
 
 const nestedType = computed(() => !["main", "other"].includes(createForm.value.type));
+const batchSeriesType = computed(() => status.value?.workspace.identity.type === "main" ? "main" : "event");
+const batchInitialQuery = computed(() => batchSeriesType.value === "main"
+  ? String(status.value?.workspace.identity.storyId || "").slice(0, 2) || "all"
+  : status.value?.workspace.identity.type === "event" ? status.value.workspace.identity.storyId : "");
 const activeStage = computed(() => productionStages.find(item => item.id === selectedStage.value));
 const readyTableCount = computed(() => status.value?.tables.files.filter(file => file.ready).length ?? 0);
 const latestJob = computed(() => jobs.value[0]);

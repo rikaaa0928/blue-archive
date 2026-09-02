@@ -57,7 +57,91 @@
           "TextEn": "Hifumi tries to diligently carry out the task Hasumi gave her. However, Tsurugi loses control when thugs interfere.",
           "TextTw": "努力想要實踐從蓮實那邊得到的清單的日步美。但是太妹們太礙事，弦生也爆發了。"
         },
-        "previous": 10002005
+        "previous": 10002005,
+        "next": 10002025
+      },
+      {
+        "title": {
+          "TextJp": "夏の海辺とお邪魔虫（２）",
+          "TextCn": "夏日海边的碍事鬼（２）",
+          "TextKr": "여름 휴가의 방해요소 2",
+          "TextTh": "อุปสรรคในวันหยุดฤดูร้อน 2",
+          "TextEn": "Summer Vacation Distractions Part 2",
+          "TextTw": "夏日海邊的礙事鬼（２）"
+        },
+        "story_id": 10002025,
+        "abstract": {
+          "TextJp": "一同はスケバンたちを追い払うことに成功。落ち着いたツルギは自分のしたことに一瞬息を呑むが……。",
+          "TextCn": "将太妹驱逐的鹤城觉得自己的行为和平常不一样，产生疑惧之心。",
+          "TextKr": "불량배들을 쫓아내고 난 츠루기는 자신의 행동이 평소와 다르지 않다며 의구심을 가진다.",
+          "TextTh": "หลังจากขับไล่พวกแยงกี้สาวไปแล้ว ซึรุกิก็ทำตัวตามปกติและเกิดความ\nสงสัยในตัวเองขึ้น",
+          "TextEn": "Tsurugi doubts that her behavior has changed at all after kicking out the thugs.",
+          "TextTw": "將太妹驅逐的弦生覺得自己的行為和平常不一樣，產生疑懼之心。"
+        },
+        "previous": 10002010,
+        "next": 10002030
+      },
+      {
+        "title": {
+          "TextJp": "砂のお城と砂風呂と（１）",
+          "TextCn": "沙堡与沙浴（１）",
+          "TextKr": "모래성 만들기와 모래찜질 1",
+          "TextTh": "ก่อปราสาททรายกับการอบทรายร้อน 1",
+          "TextEn": "Sandcastles and Sunbathing Part 1",
+          "TextTw": "沙堡與沙浴（１）"
+        },
+        "story_id": 10002030,
+        "abstract": {
+          "TextJp": "あらためて砂のお城を作り始める一同。しかし戻ってきたヒフミの目の前に建っていたのは、あまりにも巨大な砂の城だった。得意げなマシロとアズサが意気投合しつつ、そこに再びスケバンたちが現れる。",
+          "TextCn": "开始堆沙堡的一行人。与想要堆一个简单沙堡的日富美想法不同，真白与梓盖了一个巨大的城堡，之后便与太妹开始了攻城战。",
+          "TextKr": "모래성 만들기를 시작한 일행들. 평범한 모래성을 만들려던 히후미의 의도와 달리 마시로와 아즈사는 거대한 성채를 지었고, 직후 불량배와의 공성전이 시작된다.",
+          "TextTh": "เหล่าเด็กสาวช่วยกันก่อปราสาททราย ฮิฟุมิคิดว่าจะก่อปราสาททรายแบบ\nธรรมดา แต่มาชิโระกับอาซึสะได้ก่อปราสาททรายขนาดใหญ่ขึ้น และจาก\nนั้นก็ได้ทำสงครามล้อมโจมตีกับพวกแยงกี้สาว",
+          "TextEn": "The group decided to make sandcastles, and Mashiro and Azusa built a massive fortress compared to Hifumi's average-looking castle. Soon after, the thugs attack again.",
+          "TextTw": "開始堆沙堡的一行人。與想要堆一個簡單沙堡的日步美想法不同，麻白與梓蓋了一個巨大的城堡，之後便與太妹開始了攻城戰。"
+        },
+        "previous": 10002025,
+        "next": 10002045
+      },
+      {
+        "title": {
+          "TextJp": "砂のお城と砂風呂と（２）",
+          "TextCn": "沙堡与沙浴（２）",
+          "TextKr": "모래성 만들기와 모래찜질 2",
+          "TextTh": "ก่อปราสาททรายกับการอบทรายร้อน 2",
+          "TextEn": "Sandcastles and Sunbathing Part 2",
+          "TextTw": "沙堡與沙浴（２）"
+        },
+        "story_id": 10002045,
+        "abstract": {
+          "TextJp": "砂のお城は崩れてしまったものの、無事にスケバンたちを追い払うことに成功。これで良いのかなと苦笑するヒフミだったが、まずは一つ目の項目をクリアできたのだった。",
+          "TextCn": "看着攻城战结束以后的废墟，日富美觉得这些任务似乎走向了错误的方向。",
+          "TextKr": "공성전 이후의 폐허를 보며, 히후미는 이 미션들이 조금씩 잘못되어감을 느낀다.",
+          "TextTh": "เมื่อเห็นซากหลังจากทำสงครามล้อมโจมตีแล้ว ฮิฟุมิก็รู้สึกว่าภารกิจนี้\nกำลังดำเนินไปอย่างผิดพลาดทีละนิดๆ",
+          "TextEn": "In the wake of the thugs' attacks, Hifumi worries that these activities aren't doing any good.",
+          "TextTw": "看著攻城戰結束以後的廢墟，日步美覺得這些任務似乎走向了錯誤的方向。"
+        },
+        "previous": 10002030,
+        "next": 10002050
+      },
+      {
+        "title": {
+          "TextJp": "泳ぎを習得する（１）",
+          "TextCn": "学会游泳（１）",
+          "TextKr": "수영 배우기 1",
+          "TextTh": "เรียนว่ายน้ำ 1",
+          "TextEn": "Swimming Lessons Part 1",
+          "TextTw": "學會游泳（１）"
+        },
+        "story_id": 10002050,
+        "abstract": {
+          "TextJp": "「泳ぎを習得する」というミッションだったが、聞いてみたところどうやら全員がそれなりに泳げる模様。取り合えず先生が教える役で、誰かふりでも良いので……という話になった途端、ヒフミを除く全員が泳げないふりを始める。中でも迫真の演技を見せたツルギを狙って、またしてもスケバンたちが登場するのだった。",
+          "TextCn": "因为老师说这是个游泳教学的任务，所以大家开始假装不会游泳。但是被演技欺骗扑上来的不是老师而是太妹们。",
+          "TextKr": "선생님이 수영을 가르쳐 주는 미션이라는 말에 다들 수영 못하는 척 연기를 시작한다. 하지만 연기에 속아 덤벼든 것은 선생님이 아니라 불량배들이었다.",
+          "TextTh": "เมื่อได้ยินคุณครูพูดว่าการสอนว่ายน้ำเป็นหนึ่งในภารกิจ ทุกคนก็เริ่ม\nแกล้งทำเป็นเหมือนตนเองว่ายน้ำไม่เป็น แต่ว่าคนที่ถูกหลอกกลับไม่ใช่\nคุณครู แต่เป็นพวกแยงกี้สาวที่ตามมาก่อกวน",
+          "TextEn": "Each student pretends not to know how to swim to receive lessons from Sensei. The only ones fooled are the thugs, who use it as an opportunity to strike.",
+          "TextTw": "因為老師說這是個游泳教學的任務，所以大家開始假裝不會游泳。但是被演技欺騙撲上來的不是老師而是太妹們。"
+        },
+        "previous": 10002045
       }
     ]
   },

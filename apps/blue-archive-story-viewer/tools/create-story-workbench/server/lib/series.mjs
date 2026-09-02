@@ -63,17 +63,13 @@ function workspaceProgress(workspace) {
   return { code: "started", label: "可进行最终装配", latestStage: "assembly" };
 }
 
-function localStoryTitle(workspace, storyId) {
+function localStoryTitle(workspace, identity) {
   const candidates = [];
   if (workspace && hasProduction(workspace.id)) {
     const paths = productionPaths(workspace.id);
     candidates.push(paths.assemblyStory, paths.baseStory);
   }
-  candidates.push(publicStoryPath({
-    type: "event",
-    directoryId: String(storyId).slice(0, 5),
-    storyId: String(storyId),
-  }));
+  candidates.push(publicStoryPath(identity));
   const storyPath = candidates.find(candidate => fs.existsSync(candidate));
   return storyPath ? extractStoryTitle(readJson(storyPath)) : {};
 }
@@ -101,7 +97,11 @@ export function resolveEventSeries(query) {
     const workspace = workspaceByStoryId.get(String(storyId));
     const indexedTitle = localizedText(titleKey, cache);
     const fallbackTitle = Object.values(indexedTitle).some(value => !cleanText(value))
-      ? localStoryTitle(workspace, storyId)
+      ? localStoryTitle(workspace, {
+        type: "event",
+        directoryId: String(storyId).slice(0, 5),
+        storyId: String(storyId),
+      })
       : {};
     const sourceTitle = {
       ...fallbackTitle,
@@ -127,5 +127,45 @@ export function resolveEventSeries(query) {
       fallback: event.nameJp || event.nameKr || `活动 ${event.originalEventId}`,
     },
     chapters,
+  };
+}
+
+export function resolveMainSeries(query = "all") {
+  const normalizedQuery = String(query ?? "").trim().toLowerCase();
+  if (normalizedQuery && !new Set(["all", "main", "全部", "主线"]).has(normalizedQuery) &&
+      !/^\d+$/u.test(normalizedQuery)) {
+    throw new Error("主线筛选必须是 all、main 或 StoryId 数字前缀");
+  }
+  const mainRoot = path.dirname(publicStoryPath({ type: "main", storyId: "0" }));
+  const storyIds = fs.existsSync(mainRoot)
+    ? fs.readdirSync(mainRoot)
+      .filter(name => /^\d+\.json$/u.test(name))
+      .map(name => name.replace(/\.json$/u, ""))
+      .filter(storyId => !/^\d+$/u.test(normalizedQuery) || storyId.startsWith(normalizedQuery))
+      .sort((left, right) => Number(left) - Number(right))
+    : [];
+  if (!storyIds.length) throw new Error(`没有找到匹配的主线剧情：${query}`);
+  const workspaceByStoryId = new Map(listWorkspaces()
+    .filter(item => !item.corrupt && item.identity?.type === "main")
+    .map(item => [String(item.identity.storyId), item]));
+  return {
+    type: "main",
+    id: /^\d+$/u.test(normalizedQuery) ? normalizedQuery : "all",
+    title: { TextCn: normalizedQuery && /^\d+$/u.test(normalizedQuery)
+      ? `主线剧情 ${normalizedQuery}*`
+      : "全部主线剧情" },
+    chapters: storyIds.map((storyId, index) => {
+      const workspace = workspaceByStoryId.get(storyId);
+      return {
+        order: index + 1,
+        storyId,
+        directoryId: "",
+        title: {
+          ...localStoryTitle(workspace, { type: "main", storyId }),
+          fallback: `主线 ${storyId}`,
+        },
+        progress: workspaceProgress(workspace),
+      };
+    }),
   };
 }

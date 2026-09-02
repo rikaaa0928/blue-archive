@@ -25,6 +25,7 @@ function printUsage() {
 Options:
   --output, -o <dir>  output directory, default: .local-files/ba-characters
   --list, -l          list available characters
+  --references-only   download only images needed by cover generation
   --help, -h          show this help
 
 Examples:
@@ -39,6 +40,7 @@ function parseArgs(argv) {
     output: path.join(appRoot, ".local-files", "ba-characters"),
     list: false,
     help: false,
+    referencesOnly: false,
   };
   const positional = [];
 
@@ -56,6 +58,9 @@ function parseArgs(argv) {
       case "--help":
       case "-h":
         args.help = true;
+        break;
+      case "--references-only":
+        args.referencesOnly = true;
         break;
       default:
         if (arg.startsWith("-")) {
@@ -368,7 +373,7 @@ function extensionFromUrl(sourceUrl, fallback = ".png") {
   return extension || fallback;
 }
 
-async function downloadCharacter(name, outputBase) {
+export async function downloadCharacter(name, outputBase, { referencesOnly = false, outputName = "" } = {}) {
   console.log("═══ 蔚蓝档案角色资源下载器 ═══");
   console.log(`搜索角色: ${name}\n`);
 
@@ -383,7 +388,7 @@ async function downloadCharacter(name, outputBase) {
   const characterName = character.name;
   const contentId = character.content_id;
   const aliases = character.name_alias || "";
-  const outputDir = path.resolve(outputBase, sanitizeFilename(characterName));
+  const outputDir = path.resolve(outputBase, sanitizeFilename(outputName || characterName));
   fs.mkdirSync(outputDir, { recursive: true });
   console.log(`  找到角色: ${characterName} (content_id=${contentId})`);
   if (aliases) console.log(`  别名: ${aliases}`);
@@ -426,6 +431,21 @@ async function downloadCharacter(name, outputBase) {
     console.warn("  [警告] 未找到设定集");
   }
   console.log();
+
+  if (referencesOnly) {
+    const summary = {
+      角色名: characterName,
+      别名: aliases,
+      content_id: contentId,
+      立绘数量: portraits.length,
+      有回忆大厅图片: Boolean(lobbyUrl),
+      有设定集: Boolean(settingUrl),
+      仅封面参考图: true,
+    };
+    fs.writeFileSync(path.join(outputDir, "summary.json"), `${JSON.stringify(summary, null, 2)}\n`);
+    console.log(`\n═══ 封面参考图准备完成！输出目录: ${outputDir} ═══`);
+    return summary;
+  }
 
   console.log("[6/6] 下载语音和台词...");
   const voiceLines = extractVoiceLines(baseData);
@@ -517,7 +537,7 @@ async function main() {
     process.exitCode = 1;
     return;
   }
-  await downloadCharacter(args.name, args.output);
+  await downloadCharacter(args.name, args.output, { referencesOnly: args.referencesOnly });
 }
 
 const isDirectRun = process.argv[1] && pathToFileURL(path.resolve(process.argv[1])).href === import.meta.url;

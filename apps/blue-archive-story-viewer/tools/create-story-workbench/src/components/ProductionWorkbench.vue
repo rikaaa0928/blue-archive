@@ -6,7 +6,7 @@
       <p class="eyebrow">INDEPENDENT TRACKS</p>
       <h2>为当前大版本建立干净的制作基线</h2>
       <p class="stage-description">
-        自动导入原始剧情，并完成固定的繁转简与角色名规范化。完成后简中字幕和克隆语音会各自推进，互不阻塞。
+        自动导入原始剧情；若播放器目录已有同一剧情，会在逐行结构校验后继承已完成的字幕、配音稿和语音。
       </p>
       <button class="primary" :disabled="busy" @click="run('production-prepare')">
         {{ busy ? '自动准备中…' : '自动准备当前片段' }}
@@ -18,7 +18,8 @@
         <article class="track-card shared">
           <p class="eyebrow">SHARED BASE</p><h2>自动准备</h2>
           <strong>{{ production.base.rows }} 行 · {{ shortDigest(production.base.digest) }}</strong>
-          <span>固定原稿、繁转简、名称规范化已完成</span>
+          <span v-if="production.base.baseline?.adopted">已复用存量：{{ production.base.baseline.inherited.TextCn }} 行字幕 · {{ production.base.baseline.preservedVoiceIndices.length }} 条语音</span>
+          <span v-else>固定原稿、繁转简、名称规范化已完成</span>
         </article>
         <article class="track-card cn">
           <p class="eyebrow">CN TRACK</p><h2>简中字幕</h2>
@@ -79,11 +80,11 @@
           </article>
         </details>
 
-        <div v-if="production.cn.generationCount" class="fine-tune-head">
+        <div v-if="production.cn.ready || production.cn.generationCount" class="fine-tune-head">
           <div><h3>{{ production.cn.ready ? '人工微调' : '当前字幕整体审查 · 方案 ' + cnRunNumber(selectedCnRun) }}</h3><small>{{ production.cn.ready ? '随时可进入；只记录实际发生变化的行' : '逐行对照当前选中方案；确认后才进入人工微调' }}</small></div>
-          <div class="cn-review-actions"><input v-model.trim="query" placeholder="筛选行号或文本" /><button v-if="!production.cn.ready" class="accept" :disabled="busy || cnRunLoading || !selectedCnRunId" @click="approveCn">确认采用此方案</button><button v-else class="reject" :disabled="busy" @click="revokeCnApproval">撤销确认并清除微调（{{ production.cn.editCount }}）</button></div>
+          <div class="cn-review-actions"><input v-model.trim="query" placeholder="筛选行号或文本" /><button v-if="!production.cn.ready" class="accept" :disabled="busy || cnRunLoading || !selectedCnRunId" @click="approveCn">确认采用此方案</button><button v-else-if="production.cn.lastRunId" class="reject" :disabled="busy" @click="revokeCnApproval">撤销确认并清除微调（{{ production.cn.editCount }}）</button><span v-else class="completed-copy">✓ 已采用现有 Viewer 字幕基线</span></div>
         </div>
-        <div v-if="production.cn.generationCount" class="production-lines cn-comparison-lines">
+        <div v-if="production.cn.ready || production.cn.generationCount" class="production-lines cn-comparison-lines">
           <article v-for="row in filteredCnRows" :key="row.index" :class="{ changed: production.cn.ready && cnDraft[row.index] !== row.TextCn }">
             <b>#{{ row.index }}</b>
             <div class="language-cell"><span>日文原文</span><p lang="ja">{{ row.TextJp || '（无）' }}</p></div>
@@ -185,11 +186,11 @@
               </div>
             </article>
           </details>
-          <div v-if="production.voice.script.generationCount" class="fine-tune-head">
+          <div v-if="production.voice.script.ready || production.voice.script.generationCount" class="fine-tune-head">
             <div><h3>{{ production.voice.script.ready ? '配音稿人工微调' : '当前配音稿整体审查 · 方案 ' + scriptRunNumber(selectedScriptRun) }}</h3><small>{{ production.voice.script.ready ? '日文原文与中文仅供参考；保存时记录实际改动' : '逐行查看当前选中方案；确认后才进入人工微调' }}</small></div>
-            <div class="cn-review-actions"><input v-model.trim="query" placeholder="筛选行号、日文、中文或配音稿" /><button v-if="!production.voice.script.ready" class="accept" :disabled="busy || scriptRunLoading || !selectedScriptRunId" @click="approveScript">确认采用此方案</button><button v-else class="reject" :disabled="busy" @click="revokeScriptApproval">撤销确认并清除微调（{{ production.voice.script.editCount }}）</button></div>
+            <div class="cn-review-actions"><input v-model.trim="query" placeholder="筛选行号、日文、中文或配音稿" /><button v-if="!production.voice.script.ready" class="accept" :disabled="busy || scriptRunLoading || !selectedScriptRunId" @click="approveScript">确认采用此方案</button><button v-else-if="production.voice.script.lastRunId" class="reject" :disabled="busy" @click="revokeScriptApproval">撤销确认并清除微调（{{ production.voice.script.editCount }}）</button><span v-else class="completed-copy">✓ 已采用现有 Viewer 配音基线</span></div>
           </div>
-          <div v-if="production.voice.script.generationCount" class="production-lines voice-lines">
+          <div v-if="production.voice.script.ready || production.voice.script.generationCount" class="production-lines voice-lines">
             <article v-for="row in filteredRows" :key="row.index" :class="{ changed: production.voice.script.ready && scriptDraft[row.index] !== row.TextJpVoice }">
               <b>#{{ row.index }}</b><div class="source-languages"><p><span>日文原文</span><em lang="ja">{{ row.TextJp || '（无）' }}</em></p><p><span>中文参考</span><em>{{ row.TextCn || '（无）' }}</em></p></div>
               <textarea v-if="production.voice.script.ready" v-model="scriptDraft[row.index]" rows="2" lang="ja" />
@@ -264,7 +265,7 @@
         <section v-if="production.publicArtifact.current" class="post-production">
           <div class="section-title"><div><p class="eyebrow">POST PRODUCTION</p><h2>录制与收尾</h2></div><small>每一步都有独立产物判定</small></div>
           <article><b>01</b><div><strong>正式剧情 JSON</strong><small>当前装配已经写入 public/story</small></div><span class="badge completed">已完成</span></article>
-          <article><b>02</b><div><strong>活动索引</strong><small>同一活动未完成全部章节时也可重复更新</small></div><span :class="['badge', production.eventIndex.current ? 'completed' : 'ready']">{{ production.eventIndex.current ? '已更新' : '待执行' }}</span><button class="ghost" :disabled="busy" @click="run('production-event-index')">更新活动索引</button></article>
+          <article v-if="isEventStory"><b>02</b><div><strong>活动索引</strong><small>同一活动未完成全部章节时也可重复更新</small></div><span :class="['badge', production.eventIndex.current ? 'completed' : 'ready']">{{ production.eventIndex.current ? '已更新' : '待执行' }}</span><button class="ghost" :disabled="busy" @click="run('production-event-index')">更新活动索引</button></article>
           <article><b>03</b><div><strong>录制默认分支</strong><small>来自上方最终分支确认，录制前由原子脚本写入并再次校验</small></div><span class="badge completed">已确认</span></article>
           <article><b>04</b><div><strong>简中视频</strong><small>最终预览使用的视频即为正式录制产物</small></div><span class="badge completed">已录制并确认</span></article>
           <article><b>05</b><div><strong>视频产物验收</strong><small>ffprobe 元数据检查与 FFmpeg 全量解码</small><template v-if="production.recording.current"><code>{{ production.recording.output }}</code></template></div><span :class="['badge', production.recording.current ? 'completed' : 'locked']">{{ production.recording.current ? '验收通过' : '等待录制' }}</span></article>
@@ -291,7 +292,7 @@ const props = defineProps({ workspaceId: String, section: String, busy: Boolean,
 const emit = defineEmits(["run", "error", "navigate", "changed", "open-cover-studio"]);
 const exists = ref(false); const production = ref(null); const loaded = ref(false); const loading = ref(false);
 const legacyModel = localStorage.getItem("story-workbench-llm-model") || "gemini-3.7-flash";
-const cnModel = ref(localStorage.getItem("story-workbench-cn-llm-model") || legacyModel);
+const cnModel = ref(localStorage.getItem("story-workbench-cn-llm-model") || "gemini-3.1-pro-preview");
 const scriptModel = ref(localStorage.getItem("story-workbench-voice-script-llm-model") || legacyModel);
 const cnGuidance = ref(""); const scriptGuidance = ref(""); const query = ref("");
 const cnDraft = ref({}); const scriptDraft = ref({}); const speakerDraft = ref({});
@@ -362,12 +363,13 @@ function setBranchChecked(key, checked) { const next = new Set(checkedBranches.v
 function setDefaultBranch(index, selectionGroup) { mutate("/branches", "PATCH", { defaultSelectionGroups: { [index]: selectionGroup } }); }
 function completePreview() { mutate("/preview/complete", "POST", {}); }
 async function materializeStory() { if (!window.confirm("将当前装配生成到 public/story，作为播放器和录制输入，确认继续？")) return; await mutate("/formal-story", "POST", { confirmed: true }); }
-const cnStateLabel = computed(() => !production.value?.cn.generationCount ? "等待 LLM" : production.value.cn.ready ? "整体通过，可随时微调" : "等待整体审查");
+const cnStateLabel = computed(() => production.value?.cn.ready ? (production.value.cn.approvalSource === "existing-viewer-baseline" ? "已采用存量基线" : "整体通过，可随时微调") : !production.value?.cn.generationCount ? "等待 LLM" : "等待整体审查");
 const speakerStateLabel = computed(() => !production.value?.voice.speakers.scannedAt ? "尚未扫描" : production.value.voice.speakers.ready ? "自动确认完成" : `${production.value.voice.speakers.unresolvedCount} 个例外待处理`);
-const scriptStateLabel = computed(() => !production.value?.voice.script.generationCount ? "等待生成" : production.value.voice.script.ready ? "整体通过，可随时微调" : "等待整体审查");
+const scriptStateLabel = computed(() => production.value?.voice.script.ready ? (production.value.voice.script.approvalSource === "existing-viewer-baseline" ? "已采用存量基线" : "整体通过，可随时微调") : !production.value?.voice.script.generationCount ? "等待生成" : "等待整体审查");
 const voicePrerequisitesReady = computed(() => production.value?.voice.speakers.ready && production.value?.voice.references.ready && production.value?.voice.script.ready);
 const voiceStateLabel = computed(() => voicePrerequisitesReady.value ? "前置任务已完成" : [speakerStateLabel.value, scriptStateLabel.value].join(" · "));
 const assemblyReady = computed(() => production.value?.cn.ready && voicePrerequisitesReady.value && production.value?.voice.tts.voiceStoryReady);
+const isEventStory = computed(() => props.status?.workspace?.identity?.type === "event");
 function shortDigest(value) { return String(value || "").replace("sha256:", "").slice(0, 10); } function formatTime(value) { return value ? new Date(value).toLocaleString("zh-CN", { hour12: false }) : ""; }
 
 watch(() => props.workspaceId, () => { speakerContextStory.value = null; speakerPlayerReady.value = false; pendingSpeakerIndex.value = null; locatedSpeakerIndex.value = null; activeSpeakerKey.value = ""; selectedCnRunId.value = ""; selectedCnRun.value = null; selectedScriptRunId.value = ""; selectedScriptRun.value = null; load(); }); watch(() => props.section, next => { if (next !== "production-voice") { speakerPlayerReady.value = false; locatedSpeakerIndex.value = null; return; } if (production.value?.voice.speakers.scannedAt) loadSpeakerContextStory().catch(cause => emit("error", cause)); }); watch(() => props.latestJob?.status, (next, previous) => { if (next && next !== "running" && previous === "running") load(); });

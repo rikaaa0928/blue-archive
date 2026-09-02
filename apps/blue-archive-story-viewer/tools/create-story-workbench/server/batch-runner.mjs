@@ -4,19 +4,38 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { listJobs } from "./lib/jobs.mjs";
-import { getProduction, hasProduction } from "./lib/production.mjs";
+import {
+  approveCn,
+  approveVoiceScript,
+  buildProductionStory,
+  getProduction,
+  hasProduction,
+  updateProductionBranches,
+  updateSpeakerResolution,
+} from "./lib/production.mjs";
 import { reconcileWorkspace } from "./lib/reconcile.mjs";
 import { localFilesRoot, nowIso, readJson, writeJsonAtomic } from "./lib/utils.mjs";
 import { ensureWorkspace } from "./lib/workspaces.mjs";
 
 const runnerPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "stage-runner.mjs");
-export function nextBatchStep(state, production = null) {
+export function nextBatchStep(state, production = null, mode = "review") {
   if (!state.tables.ready) return { gate: "tables", label: "原始表未就绪" };
   if (!production) return { action: "production-prepare" };
-  if (production.cn.generationCount === 0) return { action: "production-cn-generate" };
+  if (!production.cn.ready && production.cn.generationCount === 0) {
+    return { action: "production-cn-generate" };
+  }
+  if (mode === "complete" && !production.cn.ready) {
+    return { action: "production-cn-approve" };
+  }
   if (production.voice.speakers.scannedAt === null) return { action: "production-speaker-scan" };
-  if (production.voice.script.generationCount === 0) {
+  if (mode === "complete" && !production.voice.speakers.ready) {
+    return { action: "production-speakers-default-npc" };
+  }
+  if (!production.voice.script.ready && production.voice.script.generationCount === 0) {
     return { action: "production-voice-script-generate" };
+  }
+  if (mode === "complete" && !production.voice.script.ready) {
+    return { action: "production-voice-script-approve" };
   }
   const pending = [];
   if (!production.cn.ready) pending.push("简中整体审查");
@@ -27,7 +46,29 @@ export function nextBatchStep(state, production = null) {
   if (pending.length) {
     return { gate: "production-human", label: `等待${pending.join("、")}` };
   }
-  return { gate: "production-prerequisites-complete", label: "两条线路前置任务已完成" };
+  if (mode !== "complete") {
+    return { gate: "production-prerequisites-complete", label: "两条线路前置任务已完成" };
+  }
+  if (!production.voice.references.ready) return { action: "production-reference-prepare" };
+  if (!production.voice.tts.voiceStoryReady) return { action: "production-tts" };
+  if (!production.assembly.current) return { action: "production-assemble" };
+  if (production.assembly.inspection.errors.length) {
+    return {
+      gate: "production-structure-error",
+      label: `结构检查失败：${production.assembly.inspection.errors.join("；")}`,
+    };
+  }
+  const choices = production.assembly.inspection.choices;
+  const checked = new Set(production.preview.branches.checkedSelectionKeys);
+  const branchesReady = choices.every(choice => {
+    const options = choice.options.filter(option => option.selectionGroup > 0);
+    return options.every(option => checked.has(option.key)) &&
+      (!options.length || options.some(option => option.selectionGroup ===
+        Number(production.preview.branches.defaultSelectionGroups[choice.index])));
+  });
+  if (!branchesReady) return { action: "production-branches-default" };
+  if (!production.recording.current) return { action: "production-record" };
+  return { gate: "production-recording-complete", label: "录制与完整性验收已完成" };
 }
 
 function updateBatch(batchPath, transform) {
@@ -47,7 +88,9 @@ function runAction(workspace, action, params, batchDirectory) {
   const directory = path.join(workspace.paths.jobs, jobId);
   fs.mkdirSync(directory, { recursive: true });
   const actionParams = action === "production-cn-generate" ? params.llm ?? {} :
-    action === "production-voice-script-generate" ? params.voiceDraft ?? {} : {};
+    action === "production-voice-script-generate" ? params.voiceDraft ?? {} :
+    action === "production-tts" ? params.tts ?? {} :
+    action === "production-record" ? { subtitle: "cn", ...(params.recording ?? {}) } : {};
   const paramsPath = path.join(directory, "params.json");
   writeJsonAtomic(paramsPath, actionParams);
   const jobPath = path.join(directory, "job.json");
@@ -85,6 +128,48 @@ function runAction(workspace, action, params, batchDirectory) {
   if (exitCode !== 0) throw new Error(`${action} failed; see ${logPath}`);
 }
 
+function runInlineAction(workspace, action) {
+  if (action === "production-cn-approve") {
+    approveCn(workspace.id, "", "批处理自动采用最新 LLM 结果");
+    return true;
+  }
+  if (action === "production-speakers-default-npc") {
+    const production = getProduction(workspace.id, { includeStory: false, includeHistory: false });
+    for (const item of production.voice.speakers.items.filter(item => item.requiresHuman && !item.resolution)) {
+      updateSpeakerResolution(workspace.id, item.stableKey, { type: "npc" }, "批处理按默认 NPC 处理未知身份");
+    }
+    return true;
+  }
+  if (action === "production-voice-script-approve") {
+    approveVoiceScript(workspace.id, "", "批处理自动采用最新 LLM 结果");
+    return true;
+  }
+  if (action === "production-assemble") {
+    buildProductionStory(workspace.id);
+    return true;
+  }
+  if (action === "production-branches-default") {
+    const production = getProduction(workspace.id, { includeStory: false, includeHistory: false });
+    const defaultSelectionGroups = {};
+    const checkedSelectionKeys = [];
+    for (const choice of production.assembly.inspection.choices) {
+      const options = choice.options.filter(option => option.selectionGroup > 0);
+      checkedSelectionKeys.push(...options.map(option => option.key));
+      const existing = Number(production.preview.branches.defaultSelectionGroups[choice.index]);
+      if (options.length && !options.some(option => option.selectionGroup === existing)) {
+        defaultSelectionGroups[choice.index] = options[0].selectionGroup;
+      }
+    }
+    updateProductionBranches(workspace.id, {
+      defaultSelectionGroups,
+      checkedSelectionKeys,
+      note: "批处理检查全部分支，并仅为缺少有效默认值的选择页补选第一个分支",
+    });
+    return true;
+  }
+  return false;
+}
+
 async function main() {
   const batchId = process.argv[2];
   const batchDirectory = path.join(localFilesRoot, "create-story", "_batches", batchId);
@@ -92,9 +177,9 @@ async function main() {
   const batch = readJson(batchPath);
   for (const item of batch.items) {
     const workspace = ensureWorkspace({
-      type: "event",
+      type: batch.series.type,
       storyId: item.storyId,
-      directoryId: item.directoryId,
+      directoryId: item.directoryId || "",
     });
     updateItem(batchPath, item.storyId, { status: "running", error: null });
     try {
@@ -106,10 +191,11 @@ async function main() {
           hasProduction(workspace.id)
             ? getProduction(workspace.id, { includeStory: false, includeHistory: false })
             : null,
+          batch.mode ?? "review",
         );
         if (!step.action) {
           updateItem(batchPath, item.storyId, {
-            status: "waiting",
+            status: step.gate === "production-recording-complete" ? "completed" : "waiting",
             gate: step.gate,
             gateLabel: step.label,
           });
@@ -118,7 +204,9 @@ async function main() {
         }
         console.log(`[${item.order}] ${item.storyId}: start ${step.action}`);
         updateItem(batchPath, item.storyId, { lastAction: step.action, gate: null });
-        runAction(workspace, step.action, batch.params ?? {}, batchDirectory);
+        if (!runInlineAction(workspace, step.action)) {
+          runAction(workspace, step.action, batch.params ?? {}, batchDirectory);
+        }
         console.log(`[${item.order}] ${item.storyId}: complete ${step.action}`);
       }
     } catch (error) {

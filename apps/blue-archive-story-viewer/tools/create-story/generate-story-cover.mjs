@@ -8,6 +8,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { GoogleGenAI, Type } from "@google/genai";
 
 import { resolveStoryCharacterRoster } from "./ba-character-catalog.mjs";
+import { resolveCharacterImageReferences } from "./character-image-resources.mjs";
 import { parseScenarioScriptSpeakers } from "./scenario-script-speakers.mjs";
 
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url));
@@ -260,22 +261,30 @@ async function rosterFromStory(outline, characterRoot) {
   return byName;
 }
 
-export async function collectCoverRoster({ outline, speakerConfig, characters, characterRoot }) {
+export async function collectCoverRoster({
+  outline, speakerConfig, characters, characterRoot, characterVersions = {},
+}) {
   const byName = speakerConfig
     ? rosterFromSpeakerConfig(speakerConfig, outline, characterRoot)
     : await rosterFromStory(outline, characterRoot);
   for (const characterName of characters) {
     addRosterEntry(byName, { characterName, stableKeys: [], appearances: 0 }, characterRoot);
   }
-  return [...byName.values()].map((entry, index) => ({
-    id: `character-${index + 1}`,
-    characterName: entry.characterName,
-    stableKeys: [...entry.stableKeys],
-    appearances: entry.appearances,
-    settingPath: entry.settingPath,
-    lobbyPath: entry.lobbyPath,
-    referenceReady: Boolean(entry.settingPath),
-  })).sort((left, right) => right.appearances - left.appearances ||
+  return [...byName.values()].map((entry, index) => {
+    const resourceName = String(characterVersions[entry.characterName] || entry.characterName).trim();
+    const references = resolveCharacterImageReferences(characterRoot, resourceName);
+    return {
+      id: `character-${index + 1}`,
+      characterName: entry.characterName,
+      resourceName,
+      stableKeys: [...entry.stableKeys],
+      appearances: entry.appearances,
+      settingPath: references.primaryPath,
+      settingKind: references.primaryKind,
+      lobbyPath: references.lobbyPath,
+      referenceReady: Boolean(references.primaryPath),
+    };
+  }).sort((left, right) => right.appearances - left.appearances ||
     left.characterName.localeCompare(right.characterName, "zh-CN"));
 }
 
@@ -321,9 +330,11 @@ export function makeCoverPlanningPrompt({ storyId, story, outline, roster, guida
     availableCharacterReferences: roster.map(item => ({
       id: item.id,
       characterName: item.characterName,
+      resourceVersion: item.resourceName,
       stableKeys: item.stableKeys,
       dialogueAppearances: item.appearances,
-      settingSheetReady: item.referenceReady,
+      referenceImageReady: item.referenceReady,
+      referenceImageKind: item.settingKind,
       lobbyReferenceReady: Boolean(item.lobbyPath),
     })),
     humanGuidance: compactText(guidance) || undefined,
@@ -341,7 +352,7 @@ export function makeCoverPlanningPrompt({ storyId, story, outline, roster, guida
         "Do not automatically turn every story into combat, screaming, or a boss confrontation.",
       ],
       characters: [
-        `Choose 1 to ${maxCharacters} ids with settingSheetReady=true. Prefer one character unless a second is essential.`,
+        `Choose 1 to ${maxCharacters} ids with referenceImageReady=true. Prefer one character unless a second is essential.`,
         "Each physical character appears exactly once. A symbolic reflection or shadow must unmistakably be the same person, not a clone.",
         "Hair, eyes, halo, and signature accessories are immutable identity anchors. Clothing may change only when the concept deliberately calls for it.",
       ],
@@ -401,15 +412,26 @@ function selectedReferences(plan, roster, includeLobby) {
   const byId = new Map(roster.map(item => [item.id, item]));
   return plan.selectedCharacterIds.flatMap(id => {
     const item = byId.get(id);
-    const result = [{ id, characterName: item.characterName, kind: "setting-sheet", path: item.settingPath }];
-    if (includeLobby && item.lobbyPath) result.push({ id, characterName: item.characterName, kind: "lobby", path: item.lobbyPath });
+    const result = [{
+      id,
+      characterName: item.characterName,
+      resourceName: item.resourceName,
+      kind: item.settingKind || "setting-sheet",
+      path: item.settingPath,
+    }];
+    if (includeLobby && item.lobbyPath) {
+      result.push({
+        id, characterName: item.characterName, resourceName: item.resourceName,
+        kind: "lobby", path: item.lobbyPath,
+      });
+    }
     return result;
   });
 }
 
 export function makeImagePrompt(plan, references, qaFeedback = []) {
   const referenceMap = references.map((item, index) =>
-    `Reference image ${index + 1}: ${item.characterName} (${item.id}), ${item.kind}; use it only for identity anchors and costume details, not composition.`).join("\n");
+    `Reference image ${index + 1}: ${item.characterName} (${item.id}), ${item.kind}, costume/version ${item.resourceName || item.characterName}; use it only for identity anchors and costume details, not composition.`).join("\n");
   const retry = qaFeedback.length ? `\nFix only these verified failures from the previous candidate:\n- ${qaFeedback.join("\n- ")}` : "";
   return `${plan.imagePrompt}\n\n${referenceMap}\n\nMandatory output contract: cinematic anime key visual, 16:9 video thumbnail. Each selected character appears exactly once. Preserve hair, eye color, halo, and signature accessories from the references. Rebuild pose, camera, background, lighting, and expression from the chapter concept. Keep ${plan.titleSafeArea} as natural visual negative space, not a designed title panel.${retry}\n\nNegative prompt: ${plan.negativePrompt}. no text, no letters, no logo, no watermark, no UI, no speech bubble, no title card, no blank title panel, no black rectangle, no pseudo-writing, no extra limbs, no malformed hands, no duplicate person, no background clone, no identity swap, no clothing swap, no effects hiding faces or halos.`;
 }
@@ -584,6 +606,7 @@ export async function generateStoryCover(options, dependencies = {}) {
     speakerConfig,
     characters: options.characters || [],
     characterRoot,
+    characterVersions: options.characterVersions || {},
   });
   if (!roster.some(item => item.referenceReady)) {
     throw new Error(`No character setting sheet is ready under ${characterRoot}; pass --speaker-config or --character`);
@@ -633,6 +656,7 @@ export async function generateStoryCover(options, dependencies = {}) {
   const references = selectedReferences(plan, roster, options.includeLobby);
   let feedback = [];
   let finalizationStarted = false;
+  let lastGenerationError = null;
   for (let attemptNumber = 1; attemptNumber <= options.maxAttempts; attemptNumber += 1) {
     const attemptResolution = coverAttemptResolution(
       options.resolution,
@@ -643,7 +667,21 @@ export async function generateStoryCover(options, dependencies = {}) {
     console.log(`Generating cover attempt ${attemptNumber}/${options.maxAttempts} at ${attemptResolution}...`);
     const prompt = makeImagePrompt(plan, references, feedback);
     fs.writeFileSync(path.join(runDirectory, `attempt-${String(attemptNumber).padStart(2, "0")}-prompt.txt`), prompt);
-    const image = await createImage(ai, { model: options.imageModel, prompt, references, resolution: attemptResolution });
+    let image;
+    try {
+      image = await createImage(ai, { model: options.imageModel, prompt, references, resolution: attemptResolution });
+    } catch (error) {
+      lastGenerationError = error;
+      manifest.attempts.push({
+        number: attemptNumber,
+        resolution: attemptResolution,
+        status: "generation-failed",
+        error: error.message,
+      });
+      writeJsonAtomic(manifestPath, manifest);
+      console.warn(`Cover generation attempt ${attemptNumber}/${options.maxAttempts} failed: ${error.message}`);
+      continue;
+    }
     const dimensions = imageDimensions(image.buffer, image.mimeType);
     if (dimensions.width && dimensions.height && Math.abs(dimensions.width / dimensions.height - 16 / 9) > 0.04) {
       throw new Error(`Generated image is not 16:9: ${dimensions.width}x${dimensions.height}`);
@@ -668,11 +706,16 @@ export async function generateStoryCover(options, dependencies = {}) {
     if (!feedback.length) feedback = qa.issues.map(issue => issue.regenerationInstruction).filter(Boolean);
   }
 
-  const best = [...manifest.attempts].sort((left, right) =>
+  const best = manifest.attempts.filter(item => item.qa && item.imagePath).sort((left, right) =>
     Number(right.qa.accepted) - Number(left.qa.accepted) ||
     Number(right.resolution === options.resolution) - Number(left.resolution === options.resolution) ||
     Number(right.qa.score) - Number(left.qa.score))[0];
-  if (!best) throw new Error("No image candidate was generated");
+  if (!best) {
+    throw new Error(
+      `No image candidate was generated after ${options.maxAttempts} attempts${lastGenerationError ? `. Last error: ${lastGenerationError.message}` : ""}`,
+      lastGenerationError ? { cause: lastGenerationError } : undefined,
+    );
+  }
   const source = path.resolve(appRoot, best.imagePath);
   const extension = path.extname(source);
   const defaultOutput = path.join(defaultCoverRoot, `${storyId}-cover-gemini-${runId}${extension}`);

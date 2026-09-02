@@ -4,7 +4,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { hasProduction, productionPaths } from "./production.mjs";
-import { resolveEventSeries } from "./series.mjs";
+import { coverCharactersFromSpeakerConfigs } from "./cover-character-versions.mjs";
+import { resolveEventSeries, resolveMainSeries } from "./series.mjs";
 import { listWorkspaces } from "./workspaces.mjs";
 import { appRoot, localFilesRoot, nowIso, readJson, safeSegment, writeJsonAtomic } from "./utils.mjs";
 
@@ -71,7 +72,7 @@ export function selectCoverCandidate(storyId, rawName) {
   const selection = { name, selectedAt: nowIso(), storyId: normalizedStoryId };
   writeJsonAtomic(path.join(coverSelectionRoot, `${normalizedStoryId}.json`), selection);
   const workspace = listWorkspaces().find(item =>
-    !item.corrupt && item.identity?.type === "event" && String(item.identity.storyId) === normalizedStoryId);
+    !item.corrupt && String(item.identity?.storyId) === normalizedStoryId);
   if (workspace) {
     writeJsonAtomic(
       path.join(workspace.paths.resources, `cover-selection-${workspace.activeVersionId}.json`),
@@ -81,34 +82,40 @@ export function selectCoverCandidate(storyId, rawName) {
   return selection;
 }
 
-export function resolveCoverSeries(query) {
-  const series = resolveEventSeries(query);
+export function resolveCoverSeries(query, type = "event") {
+  if (!new Set(["event", "main"]).has(type)) throw new Error(`Unsupported cover series type: ${type}`);
+  const series = type === "main" ? resolveMainSeries(query) : resolveEventSeries(query);
   const workspaceByStoryId = new Map(listWorkspaces()
-    .filter(item => !item.corrupt && item.identity?.type === "event")
+    .filter(item => !item.corrupt && item.identity?.type === type)
     .map(item => [String(item.identity.storyId), item]));
   const coverNames = fs.existsSync(coverRoot) ? fs.readdirSync(coverRoot)
     .filter(name => /\.(?:jpe?g|png|webp)$/iu.test(name)) : [];
+  const chapters = series.chapters.map(chapter => {
+    const workspace = workspaceByStoryId.get(chapter.storyId);
+    let speakerConfig = null;
+    if (workspace && hasProduction(workspace.id)) {
+      const paths = productionPaths(workspace.id);
+      if (fs.existsSync(paths.speakers)) speakerConfig = paths.speakers;
+    }
+    const candidates = coverNames.filter(name => name.startsWith(chapter.storyId));
+    return {
+      ...chapter,
+      workspaceId: workspace?.id ?? null,
+      coverReady: true,
+      coverReadyReason: "可自动导出日文剧情",
+      storyPath: null,
+      speakerConfig,
+      candidates,
+      selectedCover: selectedCoverName(workspace, chapter.storyId),
+    };
+  });
   return {
     ...series,
-    chapters: series.chapters.map(chapter => {
-      const workspace = workspaceByStoryId.get(chapter.storyId);
-      let speakerConfig = null;
-      if (workspace && hasProduction(workspace.id)) {
-        const paths = productionPaths(workspace.id);
-        if (fs.existsSync(paths.speakers)) speakerConfig = paths.speakers;
-      }
-      const candidates = coverNames.filter(name => name.startsWith(chapter.storyId));
-      return {
-        ...chapter,
-        workspaceId: workspace?.id ?? null,
-        coverReady: true,
-        coverReadyReason: "可自动导出日文剧情",
-        storyPath: null,
-        speakerConfig,
-        candidates,
-        selectedCover: selectedCoverName(workspace, chapter.storyId),
-      };
-    }),
+    characters: coverCharactersFromSpeakerConfigs(chapters
+      .map(chapter => chapter.speakerConfig)
+      .filter(Boolean)
+      .map(filePath => readJson(filePath))),
+    chapters,
   };
 }
 
@@ -145,17 +152,31 @@ function launch(batchId) {
   });
 }
 
-export function createCoverBatch({ query, storyIds, params = {} }) {
-  const series = resolveCoverSeries(query);
+export function createCoverBatch({ query, type = "event", storyIds, params = {} }) {
+  const series = resolveCoverSeries(query, type);
   const selected = [...new Set((storyIds ?? []).map(String))];
   if (!selected.length) throw new Error("At least one cover chapter must be selected");
   const allowed = new Set(series.chapters.map(chapter => chapter.storyId));
-  if (selected.some(storyId => !allowed.has(storyId))) throw new Error("Cover batch contains a chapter outside the event series");
+  if (selected.some(storyId => !allowed.has(storyId))) {
+    throw new Error("Cover batch contains a chapter outside the selected series");
+  }
   const chapters = series.chapters.filter(chapter => selected.includes(chapter.storyId));
   const unavailable = chapters.filter(chapter => !chapter.coverReady);
-  if (unavailable.length) throw new Error(`Cover inputs are not ready: ${unavailable.map(item => item.storyId).join(", ")}`);
+  if (unavailable.length) {
+    throw new Error(`Cover inputs are not ready: ${unavailable.map(item => item.storyId).join(", ")}`);
+  }
   if (listRunningCoverBatches().length) throw new Error("Another series cover batch is already running");
-  const batchId = `${Date.now()}-covers-event-${series.id}`;
+  const selectedVersions = Object.fromEntries(Object.entries(params.characterVersions ?? {})
+    .map(([name, resourceName]) => [String(name), String(resourceName)]));
+  const characterOptions = new Map(series.characters.flatMap(character =>
+    character.options.map(option => [`${character.characterName}\0${option.resourceName}`, option])));
+  for (const [name, resourceName] of Object.entries(selectedVersions)) {
+    if (!characterOptions.has(`${name}\0${resourceName}`)) {
+      throw new Error(`Unknown cover character version: ${name} -> ${resourceName}`);
+    }
+  }
+  params = { ...params, characterVersions: selectedVersions };
+  const batchId = `${Date.now()}-covers-${series.type}-${series.id}`;
   fs.mkdirSync(directory(batchId), { recursive: true });
   const sourceRoot = path.join(directory(batchId), "japanese-stories");
   const input = {
@@ -177,7 +198,7 @@ export function createCoverBatch({ query, storyIds, params = {} }) {
   writeJsonAtomic(payloadPath(batchId), {
     schemaVersion: 1,
     id: batchId,
-    kind: "event-series-covers",
+    kind: `${series.type}-series-covers`,
     series: input.series,
     query: String(query),
     status: "queued",

@@ -13,12 +13,14 @@ import {
   getVoiceScriptRun,
   getProduction,
   initializeProduction,
+  inspectAssembly,
   recordCnGeneration,
   recordSpeakerScan,
   recordVoiceScriptGeneration,
   revokeCnApproval,
   revokeVoiceScriptApproval,
   setVoiceScriptSkip,
+  updateSpeakerResolution,
   writeReferenceArtifact,
 } from "./production.mjs";
 import { jsonDigest, storyDigest, workspaceDirectory } from "./utils.mjs";
@@ -28,6 +30,8 @@ const identity = { type: "other", storyId: "999999999902" };
 const candidateIdentity = { type: "other", storyId: "999999999903" };
 const voiceCandidateIdentity = { type: "other", storyId: "999999999904" };
 const videoPreviewIdentity = { type: "other", storyId: "999999999905" };
+const baselineIdentity = { type: "other", storyId: "999999999906" };
+const npcIdentity = { type: "other", storyId: "999999999907" };
 
 function story() {
   return {
@@ -38,6 +42,42 @@ function story() {
     ],
   };
 }
+
+test("assembly inspection recognizes ns-tagged recording choices", () => {
+  const inspection = inspectAssembly({
+    content: [
+      {
+        ScriptKr: '[ns3] "첫 번째"\n[ns4] "두 번째"',
+        TextJp: '[ns3] "一つ目"\n[ns4] "二つ目"',
+        TextCn: '[ns3]「第一个」\n[ns4]「第二个」',
+      },
+      { ScriptKr: "1;test;00;response", SelectionGroup: 3 },
+      { ScriptKr: "1;test;00;response", SelectionGroup: 4 },
+    ],
+  });
+  assert.deepEqual(inspection.errors, []);
+  assert.deepEqual(inspection.choices[0], {
+    index: 0,
+    options: [
+      {
+        selectionGroup: 3,
+        text: '"첫 번째"',
+        textCn: "「第一个」",
+        textJp: '"一つ目"',
+        responseIndex: 1,
+        key: "0:3",
+      },
+      {
+        selectionGroup: 4,
+        text: '"두 번째"',
+        textCn: "「第二个」",
+        textJp: '"二つ目"',
+        responseIndex: 2,
+        key: "0:4",
+      },
+    ],
+  });
+});
 
 test("keeps CN, speaker/reference, and voice-script artifacts independently editable", () => {
   const root = workspaceDirectory(identity);
@@ -82,6 +122,28 @@ test("keeps CN, speaker/reference, and voice-script artifacts independently edit
     assert.deepEqual(getProduction(workspace.id).voice.script.effectiveSkippedIndices, []);
     assert.equal(getProduction(workspace.id).voice.speakers.ready, true);
     assert.equal(getProduction(workspace.id).voice.references.ready, true);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("allows every unresolved speaker exception to use the default NPC preset", () => {
+  const root = workspaceDirectory(npcIdentity);
+  fs.rmSync(root, { recursive: true, force: true });
+  try {
+    const workspace = ensureWorkspace(npcIdentity);
+    initializeProduction(workspace.id, story(), { source: "test" });
+    recordSpeakerScan(workspace.id, [{
+      stableKey: "여럿",
+      sourceSpeaker: "众人",
+      requiresHuman: true,
+      reason: "collective-speaker",
+      resolution: null,
+    }]);
+    updateSpeakerResolution(workspace.id, "여럿", { type: "npc" }, "默认 NPC");
+    const speaker = getProduction(workspace.id).voice.speakers.items[0];
+    assert.deepEqual(speaker.resolution, { type: "npc", preset: "anonymous-npc-v4" });
+    assert.equal(getProduction(workspace.id).voice.speakers.ready, true);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
@@ -251,6 +313,32 @@ test("requires a current validated recording before final preview approval", () 
     }, null, 2)}\n`);
     assert.equal(getProduction(workspace.id).recording.current, true);
     assert.equal(completeProductionPreview(workspace.id).preview.complete, true);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("marks complete existing viewer tracks ready without inventing LLM runs", () => {
+  const root = workspaceDirectory(baselineIdentity);
+  fs.rmSync(root, { recursive: true, force: true });
+  try {
+    const workspace = ensureWorkspace(baselineIdentity);
+    const base = story();
+    initializeProduction(workspace.id, base, {
+      source: "test",
+      baseline: { adopted: true, preservedVoiceIndices: [1] },
+    }, {
+      approveCnBaseline: true,
+      approveVoiceScriptBaseline: true,
+    });
+    const production = getProduction(workspace.id);
+    assert.equal(production.cn.ready, true);
+    assert.equal(production.cn.approvalSource, "existing-viewer-baseline");
+    assert.equal(production.cn.generationCount, 0);
+    assert.equal(production.voice.script.ready, true);
+    assert.equal(production.voice.script.approvalSource, "existing-viewer-baseline");
+    assert.equal(production.voice.script.generationCount, 0);
+    assert.deepEqual(production.base.baseline.preservedVoiceIndices, [1]);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

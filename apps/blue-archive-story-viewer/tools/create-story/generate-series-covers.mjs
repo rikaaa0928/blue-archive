@@ -269,6 +269,7 @@ export async function generateSeriesCovers(input, options, dependencies = {}) {
         storyId: String(chapter.storyId),
         speakerConfig: chapter.speakerConfig || undefined,
         characters: [],
+        characterVersions: options.characterVersions || {},
         guidance: [assignment.guidance, options.guidance].filter(Boolean).join("\n"),
         coverDirection: assignment.coverDirection,
         analysisModel: options.analysisModel,
@@ -283,7 +284,14 @@ export async function generateSeriesCovers(input, options, dependencies = {}) {
         project,
         location,
       }, { ai });
-      const item = { ...progress, status: "completed", output: cover.output, qaPassed: cover.qaPassed, qaScore: cover.qaScore, coverRunId: cover.runId };
+      const item = {
+        ...progress,
+        status: "completed",
+        output: cover.output,
+        qaPassed: cover.qaPassed,
+        qaScore: cover.qaScore,
+        coverRunId: cover.runId,
+      };
       result.items.push(item);
       dependencies.onProgress?.(item, result);
     } catch (error) {

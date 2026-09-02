@@ -21,6 +21,13 @@ test("requires an explicit default for every multi-choice page", () => {
   );
 });
 
+test("recognizes ns-tagged choice pages", () => {
+  const pages = findRecordingOptionPages([
+    { ScriptKr: "[ns3] first\n[ns4] second", TextCn: "[ns3] 一\n[ns4] 二" },
+  ]);
+  assert.deepEqual(pages[0].options.map(option => option.selectionGroup), [3, 4]);
+});
+
 test("adds deterministic single-option pages and validates the normalized result", () => {
   const selections = resolveRecordingSelections(content, [
     { storyIndex: 0, selectionGroup: 2 },

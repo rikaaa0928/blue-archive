@@ -3,6 +3,8 @@ import { spawnSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
 
 import { generateSeriesCovers } from "../../create-story/generate-series-covers.mjs";
+import { downloadCharacter } from "../../create-story/download-ba-character.mjs";
+import { resolveCharacterImageReferences } from "../../create-story/character-image-resources.mjs";
 import { createStoryToolsRoot, localFilesRoot, readJson, writeJsonAtomic } from "./lib/utils.mjs";
 
 function updateBatch(batchPath, progress, result) {
@@ -12,32 +14,50 @@ function updateBatch(batchPath, progress, result) {
     ...batch,
     plan: result?.plan ?? batch.plan ?? null,
     items: batch.items.map(item => String(item.storyId) === String(progress.storyId)
-      ? { ...item, ...progress, assignment: progress.assignment ?? assignmentById.get(String(item.storyId)) ?? item.assignment }
+      ? {
+        ...item,
+        ...progress,
+        assignment: progress.assignment ?? assignmentById.get(String(item.storyId)) ?? item.assignment,
+      }
       : { ...item, assignment: assignmentById.get(String(item.storyId)) ?? item.assignment }),
   });
 }
 
-function exportJapaneseStory(chapter, params, batchPath) {
+function exportJapaneseStory(chapter, series, params, batchPath) {
   updateBatch(batchPath, { storyId: chapter.storyId, status: "preparing" });
   const args = [
     path.join(createStoryToolsRoot, "import-ba-raw-story.mjs"),
     String(chapter.storyId),
-    "--type", "event",
-    "--directory-id", String(chapter.directoryId),
+    "--type", series.type,
     "--output", chapter.storyPath,
     "--workbench-raw-import",
     "--force",
   ];
+  if (series.type !== "main") args.push("--directory-id", String(chapter.directoryId));
   if (params.schema) args.push("--schema", String(params.schema));
   if (params.refreshBaL10n) args.push("--refresh-ba-l10n");
   console.log(`Exporting Japanese story source for ${chapter.storyId}...`);
   const result = spawnSync(process.execPath, args, { stdio: "inherit", env: process.env });
   if (result.error) throw result.error;
-  if (result.status !== 0) throw new Error(`Japanese story export failed for ${chapter.storyId} with exit code ${result.status}`);
+  if (result.status !== 0) {
+    throw new Error(`Japanese story export failed for ${chapter.storyId} with exit code ${result.status}`);
+  }
   const story = readJson(chapter.storyPath);
   const japaneseRows = story.content?.filter(unit => String(unit.TextJp ?? "").trim()).length ?? 0;
   if (!japaneseRows) throw new Error(`Exported story ${chapter.storyId} does not contain Japanese text`);
   updateBatch(batchPath, { storyId: chapter.storyId, status: "queued", japaneseRows });
+}
+
+async function prepareCharacterVersions(params) {
+  for (const resourceName of new Set(Object.values(params.characterVersions ?? {}).map(String))) {
+    const characterRoot = path.join(localFilesRoot, "ba-characters");
+    if (resolveCharacterImageReferences(characterRoot, resourceName).primaryPath) continue;
+    console.log(`Preparing cover reference resources for ${resourceName}...`);
+    await downloadCharacter(resourceName, characterRoot, {
+      referencesOnly: true,
+      outputName: resourceName,
+    });
+  }
 }
 
 async function main() {
@@ -49,12 +69,13 @@ async function main() {
   const params = readJson(path.join(directory, "params.json"), {});
   for (const chapter of input.chapters) {
     try {
-      exportJapaneseStory(chapter, params, batchPath);
+      exportJapaneseStory(chapter, input.series, params, batchPath);
     } catch (error) {
       updateBatch(batchPath, { storyId: chapter.storyId, status: "failed", error: error.message });
       throw error;
     }
   }
+  await prepareCharacterVersions(params);
   const result = await generateSeriesCovers(input, {
     ...params,
     resultJson: path.join(directory, "result.json"),

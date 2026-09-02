@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 
 import {
   getPlayerCharacterId,
@@ -31,6 +32,7 @@ import {
   applyTtsSkipDecision,
   createStoryToolsRoot,
   effectiveTtsText,
+  isPunctuationOnlyTtsText,
   jsonDigest,
   loadEnvFiles,
   localFilesRoot,
@@ -42,6 +44,10 @@ import {
   storyDigest,
   writeJsonAtomic,
 } from "./lib/utils.mjs";
+import {
+  adoptExistingStoryBaseline,
+  inspectExistingTrackCompletion,
+} from "./lib/existing-story-baseline.mjs";
 import {
   createRevision,
   getLatestRevisionForStage,
@@ -142,20 +148,48 @@ async function productionPrepare(workspace, params, jobDirectory) {
   if (params.schema) args.push("--schema", String(params.schema));
   if (params.baL10nInput) args.push("--ba-l10n-input", String(params.baL10nInput));
   run(process.execPath, args);
-  const story = readJson(output);
+  const importedStory = readJson(output);
+  const existingPath = publicStoryPath(workspace.identity);
+  const existingStory = readJson(existingPath, null);
+  const baseline = adoptExistingStoryBaseline(importedStory, existingStory);
+  const story = baseline.story;
+  const baselineCompletion = inspectExistingTrackCompletion(story);
   const mappings = await loadTraditionalToSimplifiedCharacterNameMap();
   const fill = fillMissingTextCnFromTextTw(story.content, mappings);
   const names = normalizeExistingTextCnCharacterNames(story.content, mappings);
   markOpenCcTranslationSource(story, fill);
+  const completion = inspectExistingTrackCompletion(story);
+  const adopted = baseline.summary.compatible && baseline.summary.matchedRows > 0;
   initializeProduction(workspace.id, story, {
     preparedAt: nowIso(),
     source: "raw-table-plus-ba-l10n",
     normalization: { fill, names },
+    baseline: {
+      ...baseline.summary,
+      adopted,
+      sourcePath: existingStory ? existingPath : null,
+      inheritedCnComplete: baselineCompletion.cnComplete,
+      inheritedVoiceScriptComplete: baselineCompletion.voiceScriptComplete,
+      cnComplete: completion.cnComplete,
+      missingCnIndices: completion.missingCnIndices,
+      voiceScriptComplete: completion.voiceScriptComplete,
+      voiceTargetIndices: completion.voiceTargetIndices,
+      missingVoiceScriptIndices: completion.missingVoiceScriptIndices,
+      preservedVoiceIndices: completion.preservedVoiceIndices,
+    },
+  }, {
+    approveCnBaseline: adopted && baseline.summary.inherited.TextCn > 0 &&
+      baselineCompletion.cnComplete,
+    approveVoiceScriptBaseline: adopted && baselineCompletion.voiceScriptComplete && (
+      baselineCompletion.voiceTargetIndices.length === 0 ||
+      baseline.summary.inherited.TextJpVoice + baseline.summary.inherited.VoiceJp > 0
+    ),
   });
   return {
     stage: "production-prepare",
     rows: story.content.length,
     baseStoryPath: productionPaths(workspace.id).baseStory,
+    baseline: baseline.summary,
   };
 }
 
@@ -187,6 +221,15 @@ function productionVoiceScriptGenerate(workspace, params, jobDirectory) {
   const input = temporaryStoryPath(jobDirectory, "production-voice-script-input");
   const output = temporaryStoryPath(jobDirectory, "production-voice-script-output");
   const story = productionInputStory(workspace.id, { includeCn: false, includeScript: false });
+  const production = getProduction(workspace.id, { includeStory: false, includeHistory: false });
+  const pendingBaselineIndices = new Set(
+    production.base.baseline?.missingVoiceScriptIndices ?? [],
+  );
+  const generationIndices = production.voice.script.generationCount === 0 &&
+      production.base.baseline?.adopted
+    ? [...pendingBaselineIndices]
+    : productionVoiceIndices(story).filter(index =>
+      !String(story.content[index]?.VoiceJp ?? "").trim());
   writeJsonAtomic(input, story);
   const args = [
     cli("enrich-story-with-llm.mjs"), input,
@@ -194,6 +237,7 @@ function productionVoiceScriptGenerate(workspace, params, jobDirectory) {
     "--force",
     "--no-apply-overrides",
   ];
+  if (generationIndices.length) args.push("--indices", generationIndices.join(","));
   if (params.model) args.push("--model", String(params.model));
   if (params.guidance) args.push("--guidance", String(params.guidance));
   if (params.project) args.push("--project", String(params.project));
@@ -216,6 +260,24 @@ function productionVoiceScriptGenerate(workspace, params, jobDirectory) {
     stage: "production-voice-script-generate",
     changedRows: changes.length,
   };
+}
+
+function productionVoiceIndices(story) {
+  return story.content.flatMap((unit, index) => {
+    if (!new Set(["dialogue", "narration"]).has(inferScenarioRole(unit))) return [];
+    if (!parseScenarioScriptSpeakers(unit).dialogueSpeaker) return [];
+    const existingVoice = String(unit.VoiceJp ?? "").trim();
+    const text = effectiveTtsText(unit) || (existingVoice ? String(unit.TextJp ?? "").trim() : "");
+    return text && !isPunctuationOnlyTtsText(text) ? [index] : [];
+  });
+}
+
+export function productionTtsIndices(production, story) {
+  const excluded = new Set([
+    ...(production.base.baseline?.preservedVoiceIndices ?? []),
+    ...(production.voice.script.effectiveSkippedIndices ?? []),
+  ]);
+  return productionVoiceIndices(story).filter(index => !excluded.has(index));
 }
 
 async function cnNormalize(workspace) {
@@ -342,7 +404,13 @@ async function voiceRegenerate(workspace, params, jobDirectory) {
   };
 }
 
-async function scanVoiceAvailability(story) {
+async function scanVoiceAvailability(story, { skipVoiced = false } = {}) {
+  const stableKeys = [...new Set(story.content
+    .filter(unit => !skipVoiced || !String(unit.VoiceJp ?? "").trim())
+    .map(unit => parseScenarioScriptSpeakers(unit).dialogueSpeaker)
+    .filter(Boolean))]
+    .filter(stableKey => !/^\?{2,}$/u.test(stableKey));
+  if (!stableKeys.length) return [];
   const cachePath = path.join(
     localFilesRoot,
     "create-story",
@@ -361,10 +429,6 @@ async function scanVoiceAvailability(story) {
     writeJsonAtomic(cachePath, cache);
   }
   const characterNameFor = playerCharacterNameByKey();
-  const stableKeys = [...new Set(story.content
-    .map(unit => parseScenarioScriptSpeakers(unit).dialogueSpeaker)
-    .filter(Boolean))]
-    .filter(stableKey => !/^\?{2,}$/u.test(stableKey));
   const items = [];
   for (const stableKey of stableKeys) {
     const characterName = characterNameFor(stableKey);
@@ -445,10 +509,11 @@ async function voiceCatalog(workspace) {
 
 async function productionSpeakerScan(workspace) {
   const story = productionInputStory(workspace.id, { includeCn: false, includeScript: false });
-  const availability = await scanVoiceAvailability(story);
+  const availability = await scanVoiceAvailability(story, { skipVoiced: true });
   const availabilityByKey = new Map(availability.map(item => [item.stableKey, item]));
   const storyIndicesBySpeaker = new Map();
   story.content.forEach((unit, storyIndex) => {
+    if (String(unit.VoiceJp ?? "").trim()) return;
     const { dialogueSpeaker } = parseScenarioScriptSpeakers(unit);
     if (!dialogueSpeaker) return;
     const indices = storyIndicesBySpeaker.get(dialogueSpeaker) ?? [];
@@ -458,6 +523,7 @@ async function productionSpeakerScan(workspace) {
   const items = [];
   const known = new Set();
   story.content.forEach((unit, storyIndex) => {
+    if (String(unit.VoiceJp ?? "").trim()) return;
     if (!new Set(["dialogue", "narration"]).has(inferScenarioRole(unit))) return;
     const { dialogueSpeaker } = parseScenarioScriptSpeakers(unit);
     if (!dialogueSpeaker) return;
@@ -625,8 +691,12 @@ function runProductionTts(workspace, stage, params = {}) {
   if (production.voice.script.effectiveSkippedIndices.length) {
     args.push("--skip-indices", production.voice.script.effectiveSkippedIndices.join(","));
   }
-  if (Array.isArray(params.indices) && params.indices.length) {
-    args.push("--indices", params.indices.map(Number).join(","));
+  const availableIndices = productionTtsIndices(production, story);
+  const requestedIndices = Array.isArray(params.indices) && params.indices.length
+    ? params.indices.map(Number).filter(index => availableIndices.includes(index))
+    : availableIndices;
+  if (requestedIndices.length) {
+    args.push("--indices", requestedIndices.join(","));
   }
   if (params.force) args.push("--force");
   run(process.execPath, args);
@@ -635,6 +705,14 @@ function runProductionTts(workspace, stage, params = {}) {
 
 function productionReferencePrepare(workspace) {
   const before = prepareProductionVoiceInput(workspace, { requireScript: false }).production;
+  const story = productionInputStory(workspace.id, { includeCn: true, includeScript: true });
+  if (!productionTtsIndices(before, story).length) {
+    writeReferenceArtifact(workspace.id, {}, {
+      note: "现有剧情语音完整，无需准备参考音",
+      source: "existing-viewer-baseline",
+    });
+    return { stage: "production-reference-prepare", downloaded: [], speakers: 0 };
+  }
   const downloaded = ensureProductionCharacterResources(before);
   const { paths } = runProductionTts(workspace, "prepare");
   const manifest = readJson(paths.ttsManifest);
@@ -650,6 +728,31 @@ function productionReferencePrepare(workspace) {
 }
 
 function productionTts(workspace, params) {
+  const current = getProduction(workspace.id, { includeStory: false, includeHistory: false });
+  const canonicalInput = productionInputStory(workspace.id, { includeCn: true, includeScript: true });
+  if (!productionTtsIndices(current, canonicalInput).length) {
+    const paths = productionPaths(workspace.id);
+    fs.mkdirSync(paths.ttsRoot, { recursive: true });
+    writeJsonAtomic(paths.ttsOutputStory, canonicalInput);
+    writeJsonAtomic(paths.ttsState, {
+      schemaVersion: 1,
+      completedAt: nowIso(),
+      inputs: {
+        speakers: current.voice.speakers.digest,
+        references: current.voice.references.digest,
+        script: current.voice.script.digest,
+        skipped: jsonDigest(current.voice.script.effectiveSkippedIndices),
+      },
+      storyDigest: storyDigest(canonicalInput),
+    });
+    return {
+      stage: "production-tts",
+      manifestPath: paths.ttsManifest,
+      outputStoryPath: paths.ttsOutputStory,
+      voicedRows: canonicalInput.content.filter(unit => String(unit.VoiceJp ?? "").trim()).length,
+      reusedExistingVoice: true,
+    };
+  }
   const { paths, production } = runProductionTts(workspace, "all", params);
   const publishedTransformed = path.join(paths.ttsRoot, "published-transformed-story.json");
   const publishArgs = [
@@ -950,6 +1053,9 @@ function eventIndex(workspace, params) {
 }
 
 function productionEventIndex(workspace, params) {
+  if (workspace.identity.type !== "event") {
+    throw new Error("Only event stories use the generated event index");
+  }
   const production = getProduction(workspace.id, { includeStory: false, includeHistory: false });
   if (!production.publicArtifact.current) throw new Error("Publish the current assembly first");
   const result = eventIndex(workspace, params);
@@ -1219,7 +1325,10 @@ async function main() {
   });
 }
 
-main().catch(error => {
-  console.error(error.stack || error.message);
-  process.exitCode = 1;
-});
+const isDirectRun = process.argv[1] && pathToFileURL(path.resolve(process.argv[1])).href === import.meta.url;
+if (isDirectRun) {
+  main().catch(error => {
+    console.error(error.stack || error.message);
+    process.exitCode = 1;
+  });
+}

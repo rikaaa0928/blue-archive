@@ -31,6 +31,226 @@
       "selectionGroup": 0
     }
   ],
+  "eventStory/10002025": [
+    {
+      "storyIndex": 20,
+      "selectionGroup": 0
+    },
+    {
+      "storyIndex": 23,
+      "selectionGroup": 0
+    }
+  ],
+  "eventStory/10002030": [
+    {
+      "storyIndex": 7,
+      "selectionGroup": 1
+    }
+  ],
+  "eventStory/10002045": [
+    {
+      "storyIndex": 18,
+      "selectionGroup": 0
+    },
+    {
+      "storyIndex": 31,
+      "selectionGroup": 0
+    }
+  ],
+  "eventStory/10002050": [
+    {
+      "storyIndex": 16,
+      "selectionGroup": 1
+    },
+    {
+      "storyIndex": 37,
+      "selectionGroup": 0
+    },
+    {
+      "storyIndex": 39,
+      "selectionGroup": 0
+    },
+    {
+      "storyIndex": 59,
+      "selectionGroup": 3
+    }
+  ],
+  "eventStory/10002065": [],
+  "eventStory/10002070": [
+    {
+      "storyIndex": 6,
+      "selectionGroup": 1
+    },
+    {
+      "storyIndex": 27,
+      "selectionGroup": 3
+    },
+    {
+      "storyIndex": 36,
+      "selectionGroup": 0
+    },
+    {
+      "storyIndex": 41,
+      "selectionGroup": 5
+    },
+    {
+      "storyIndex": 57,
+      "selectionGroup": 0
+    },
+    {
+      "storyIndex": 59,
+      "selectionGroup": 0
+    },
+    {
+      "storyIndex": 64,
+      "selectionGroup": 0
+    },
+    {
+      "storyIndex": 84,
+      "selectionGroup": 0
+    },
+    {
+      "storyIndex": 88,
+      "selectionGroup": 0
+    },
+    {
+      "storyIndex": 97,
+      "selectionGroup": 0
+    }
+  ],
+  "eventStory/10002085": [
+    {
+      "storyIndex": 34,
+      "selectionGroup": 0
+    }
+  ],
+  "eventStory/10002090": [
+    {
+      "storyIndex": 63,
+      "selectionGroup": 0
+    },
+    {
+      "storyIndex": 80,
+      "selectionGroup": 0
+    }
+  ],
+  "eventStory/10002105": [],
+  "eventStory/10002110": [
+    {
+      "storyIndex": 9,
+      "selectionGroup": 1
+    },
+    {
+      "storyIndex": 34,
+      "selectionGroup": 0
+    }
+  ],
+  "eventStory/10002120": [
+    {
+      "storyIndex": 6,
+      "selectionGroup": 0
+    },
+    {
+      "storyIndex": 13,
+      "selectionGroup": 1
+    },
+    {
+      "storyIndex": 25,
+      "selectionGroup": 3
+    },
+    {
+      "storyIndex": 33,
+      "selectionGroup": 5
+    },
+    {
+      "storyIndex": 62,
+      "selectionGroup": 0
+    },
+    {
+      "storyIndex": 75,
+      "selectionGroup": 7
+    },
+    {
+      "storyIndex": 121,
+      "selectionGroup": 0
+    }
+  ],
+  "eventStory/10002135": [
+    {
+      "storyIndex": 10,
+      "selectionGroup": 1
+    },
+    {
+      "storyIndex": 19,
+      "selectionGroup": 0
+    },
+    {
+      "storyIndex": 29,
+      "selectionGroup": 0
+    },
+    {
+      "storyIndex": 56,
+      "selectionGroup": 3
+    },
+    {
+      "storyIndex": 63,
+      "selectionGroup": 0
+    },
+    {
+      "storyIndex": 72,
+      "selectionGroup": 5
+    },
+    {
+      "storyIndex": 87,
+      "selectionGroup": 0
+    },
+    {
+      "storyIndex": 89,
+      "selectionGroup": 7
+    },
+    {
+      "storyIndex": 102,
+      "selectionGroup": 0
+    },
+    {
+      "storyIndex": 112,
+      "selectionGroup": 9
+    }
+  ],
+  "eventStory/10002140": [
+    {
+      "storyIndex": 21,
+      "selectionGroup": 0
+    }
+  ],
+  "eventStory/10002150": [
+    {
+      "storyIndex": 3,
+      "selectionGroup": 0
+    },
+    {
+      "storyIndex": 26,
+      "selectionGroup": 0
+    },
+    {
+      "storyIndex": 34,
+      "selectionGroup": 0
+    }
+  ],
+  "eventStory/10002160": [],
+  "eventStory/10002170": [],
+  "eventStory/10002180": [
+    {
+      "storyIndex": 47,
+      "selectionGroup": 0
+    },
+    {
+      "storyIndex": 52,
+      "selectionGroup": 0
+    }
+  ],
+  "eventStory/10002190": [],
+  "eventStory/10002200": [],
   "eventStory/10014005": [
     {
       "storyIndex": 7,

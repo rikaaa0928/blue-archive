@@ -39,7 +39,7 @@ import {
   writeReferenceArtifact,
 } from "./lib/production.mjs";
 import { approveReview, openReview, reviewSummary, updateReview } from "./lib/reviews.mjs";
-import { resolveEventSeries } from "./lib/series.mjs";
+import { resolveEventSeries, resolveMainSeries } from "./lib/series.mjs";
 import { parseScenarioScriptSpeakers } from "../../create-story/scenario-script-speakers.mjs";
 import {
   appRoot, assertInsideDirectory, effectiveTtsText,
@@ -201,10 +201,20 @@ async function handleApi(request, response, parsedUrl) {
     sendJson(response, 200, { series: resolveEventSeries(query) });
     return true;
   }
+  if (request.method === "GET" && pathname === "/api/series/main") {
+    const query = parsedUrl.searchParams.get("query") || "all";
+    sendJson(response, 200, { series: resolveMainSeries(query) });
+    return true;
+  }
   if (request.method === "GET" && pathname === "/api/cover-series/event") {
     const query = parsedUrl.searchParams.get("query");
     if (!query) throw new Error("An event id, GroupId, or event name is required");
     sendJson(response, 200, { series: resolveCoverSeries(query) });
+    return true;
+  }
+  if (request.method === "GET" && pathname === "/api/cover-series/main") {
+    const query = parsedUrl.searchParams.get("query") || "all";
+    sendJson(response, 200, { series: resolveCoverSeries(query, "main") });
     return true;
   }
   if (request.method === "GET" && pathname === "/api/cover-batches") {
@@ -270,7 +280,9 @@ async function handleApi(request, response, parsedUrl) {
     if (body.confirmed !== true) {
       sendJson(response, 409, {
         error: "confirmation-required",
-        message: "批处理会串行调用远端 LLM，请先确认所选章节与执行范围。",
+        message: body.mode === "complete"
+          ? "一键完成会调用远端 LLM、TTS 与 R2，并自动录制，请先确认所选章节与执行范围。"
+          : "批处理会串行调用远端 LLM，请先确认所选章节与执行范围。",
       });
       return true;
     }
@@ -292,7 +304,7 @@ async function handleApi(request, response, parsedUrl) {
       });
       return true;
     }
-    sendJson(response, 202, { batch: resumeBatch(batchMatch[0]) });
+    sendJson(response, 202, { batch: resumeBatch(batchMatch[0], body) });
     return true;
   }
   if (request.method === "GET" && pathname === "/api/workspaces") {

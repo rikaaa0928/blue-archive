@@ -1,6 +1,10 @@
 import fs from "node:fs";
 import path from "node:path";
 
+import {
+  findRecordingOptionPages,
+  parseRecordingOptions,
+} from "../../../create-story/recording-selections.mjs";
 import { parseScenarioScriptSpeakers } from "../../../create-story/scenario-script-speakers.mjs";
 
 import {
@@ -192,41 +196,34 @@ function mergeRowsIntoStory(story, rows, field) {
   }
 }
 
-function taggedSelections(value) {
-  return [...String(value ?? "").matchAll(/(?:^|\n)\[s(\d*)\]\s*([^\n]*)/giu)]
-    .map(match => ({
-      tag: `[s${match[1]}]`,
-      selectionGroup: match[1] ? Number(match[1]) : 0,
-      text: match[2].trim(),
-    }));
-}
-
-function inspectAssembly(story) {
+export function inspectAssembly(story) {
   const errors = [];
-  const choices = [];
-  story.content.forEach((unit, index) => {
-    if (!unit || typeof unit !== "object") errors.push(`第 ${index} 行不是剧情对象`);
-    const source = taggedSelections(unit?.ScriptKr);
-    if (!source.length) return;
-    const cnByTag = new Map(taggedSelections(unit.TextCn).map(option => [option.tag, option.text]));
-    const jpByTag = new Map(taggedSelections(unit.TextJp).map(option => [option.tag, option.text]));
-    const options = source.map(option => {
+  const choices = findRecordingOptionPages(story.content).map(page => {
+    const unit = story.content[page.storyIndex];
+    const jpByGroup = new Map(parseRecordingOptions(unit.TextJp)
+      .map(option => [option.selectionGroup, option.text]));
+    const options = page.options.map(option => {
       const responseIndex = option.selectionGroup > 0
         ? story.content.findIndex((candidate, candidateIndex) =>
-          candidateIndex > index && Number(candidate.SelectionGroup) === option.selectionGroup)
+          candidateIndex > page.storyIndex &&
+          Number(candidate.SelectionGroup) === option.selectionGroup)
         : -1;
       if (option.selectionGroup > 0 && responseIndex < 0) {
-        errors.push(`选择页 #${index} 的 SelectionGroup ${option.selectionGroup} 没有响应入口`);
+        errors.push(
+          `选择页 #${page.storyIndex} 的 SelectionGroup ${option.selectionGroup} 没有响应入口`,
+        );
       }
       return {
         ...option,
-        textCn: cnByTag.get(option.tag) ?? "",
-        textJp: jpByTag.get(option.tag) ?? "",
+        textJp: jpByGroup.get(option.selectionGroup) ?? "",
         responseIndex: responseIndex < 0 ? null : responseIndex,
-        key: `${index}:${option.selectionGroup}`,
+        key: `${page.storyIndex}:${option.selectionGroup}`,
       };
     });
-    choices.push({ index, options });
+    return { index: page.storyIndex, options };
+  });
+  story.content.forEach((unit, index) => {
+    if (!unit || typeof unit !== "object") errors.push(`第 ${index} 行不是剧情对象`);
   });
   return { errors, choices };
 }
@@ -235,7 +232,7 @@ export function productionPaths(identityOrId) {
   return pathsFor(identityOrId);
 }
 
-export function initializeProduction(identityOrId, baseStory, metadata = {}) {
+export function initializeProduction(identityOrId, baseStory, metadata = {}, options = {}) {
   if (!baseStory || !Array.isArray(baseStory.content)) {
     throw new Error("A complete normalized base story is required");
   }
@@ -247,6 +244,8 @@ export function initializeProduction(identityOrId, baseStory, metadata = {}) {
   }
   fs.mkdirSync(paths.root, { recursive: true });
   const createdAt = nowIso();
+  const approveCnBaseline = Boolean(options.approveCnBaseline);
+  const approveVoiceScriptBaseline = Boolean(options.approveVoiceScriptBaseline);
   const cnRows = textRows(baseStory, "TextCn");
   const scriptRows = textRows(baseStory, "TextJpVoice").map(row => ({
     ...row,
@@ -257,8 +256,9 @@ export function initializeProduction(identityOrId, baseStory, metadata = {}) {
     sourceDigest: storyDigest(baseStory),
     rows: cnRows,
     digest: trackDigest(cnRows),
-    approvedAt: null,
-    approvedDigest: null,
+    approvedAt: approveCnBaseline ? createdAt : null,
+    approvedDigest: approveCnBaseline ? trackDigest(cnRows) : null,
+    approvalSource: approveCnBaseline ? "existing-viewer-baseline" : null,
     updatedAt: createdAt,
   };
   const script = {
@@ -268,8 +268,9 @@ export function initializeProduction(identityOrId, baseStory, metadata = {}) {
     ttsSkippedIndices: [],
     ttsForcedIndices: [],
     digest: scriptDigest(scriptRows),
-    approvedAt: null,
-    approvedDigest: null,
+    approvedAt: approveVoiceScriptBaseline ? createdAt : null,
+    approvedDigest: approveVoiceScriptBaseline ? scriptDigest(scriptRows) : null,
+    approvalSource: approveVoiceScriptBaseline ? "existing-viewer-baseline" : null,
     updatedAt: createdAt,
   };
   writeJsonAtomic(paths.baseStory, baseStory);
@@ -417,7 +418,7 @@ export function getProduction(identityOrId, { includeStory = true, includeHistor
         effectiveSkippedIndices,
       },
       tts: {
-        exists: Boolean(ttsManifest),
+        exists: Boolean(ttsManifest || ttsState),
         completed: ttsCompleted,
         total: ttsTasks.length,
         current: ttsCurrent,
@@ -504,6 +505,7 @@ export function recordCnGeneration(identityOrId, story, result, options = {}) {
     digest: run.afterDigest,
     approvedAt: null,
     approvedDigest: null,
+    approvalSource: null,
     lastRunId: runId,
     updatedAt: generatedAt,
   });
@@ -535,6 +537,7 @@ export function approveCn(identityOrId, runId = "", note = "") {
     approvedRunId: selected.id,
     approvedAt,
     approvedDigest: selected.afterDigest,
+    approvalSource: "llm-run",
     approvalNote: String(note ?? "").trim(),
     updatedAt: approvedAt,
   });
@@ -563,6 +566,7 @@ export function revokeCnApproval(identityOrId) {
     approvedRunId: null,
     approvedAt: null,
     approvedDigest: null,
+    approvalSource: null,
     approvalNote: "",
     lastEditId: null,
     approvalRevokedAt: revokedAt,
@@ -638,6 +642,7 @@ export function recordVoiceScriptGeneration(identityOrId, story, result, options
     digest: run.afterDigest,
     approvedAt: null,
     approvedDigest: null,
+    approvalSource: null,
     lastRunId: runId,
     updatedAt: generatedAt,
   });
@@ -668,6 +673,7 @@ export function approveVoiceScript(identityOrId, runId = "", note = "") {
     approvedRunId: selected.id,
     approvedAt,
     approvedDigest: selected.afterDigest,
+    approvalSource: "llm-run",
     approvalNote: String(note ?? "").trim(),
     updatedAt: approvedAt,
   });
@@ -704,6 +710,7 @@ export function revokeVoiceScriptApproval(identityOrId) {
     approvedRunId: null,
     approvedAt: null,
     approvedDigest: null,
+    approvalSource: null,
     approvalNote: "",
     lastEditId: null,
     approvalRevokedAt: revokedAt,
@@ -824,15 +831,15 @@ export function updateSpeakerResolution(identityOrId, stableKey, resolution, not
   const item = current.items[index];
   const type = String(resolution?.type ?? "");
   let normalizedResolution;
-  if (item.reason === "collective-speaker") {
+  if (type === "npc") {
+    normalizedResolution = { type: "npc", preset: "anonymous-npc-v4" };
+  } else if (item.reason === "collective-speaker") {
     const members = [...new Set((resolution?.members ?? []).map(String)
       .map(value => value.trim()).filter(Boolean))];
     if (type !== "collective" || members.length < 2) {
       throw new Error("A collective speaker requires at least two stable Korean member keys");
     }
     normalizedResolution = { type, members };
-  } else if (type === "npc") {
-    normalizedResolution = { type: "npc", preset: "anonymous-npc-v4" };
   } else if (type === "character") {
     const resolvedKey = String(resolution?.stableKey ?? "").trim();
     const characterName = String(resolution?.characterName ?? "").trim();

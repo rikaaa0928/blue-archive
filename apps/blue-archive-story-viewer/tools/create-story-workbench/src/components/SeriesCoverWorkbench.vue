@@ -9,9 +9,12 @@
         Gemini 会先通读所选章节的日文原文，统一规划整组封面的情绪节奏，再按顺序逐章生成。
         日文剧情会直接从原始表导出，不依赖字幕、语音、录制或工作区进度；生成结果仍需人工选择。
       </p>
-      <form class="series-search" @submit.prevent="resolveSeries">
-        <label>活动 ID、任一 GroupId 或活动名称
-          <input v-model.trim="query" placeholder="例如 803 或 10002005" required />
+      <form class="series-search cover-series-search" @submit.prevent="resolveSeries">
+        <label>剧情类型
+          <select v-model="seriesType"><option value="event">活动</option><option value="main">主线</option></select>
+        </label>
+        <label>{{ seriesType === 'event' ? '活动 ID、任一 GroupId 或活动名称' : '主线 StoryId 前缀' }}
+          <input v-model.trim="query" :placeholder="seriesType === 'event' ? '例如 803 或 10002005' : '例如 31；留空表示全部主线'" :required="seriesType === 'event'" />
         </label>
         <button class="primary" :disabled="loading">{{ loading ? '读取系列中…' : '获取系列全部章节' }}</button>
       </form>
@@ -22,9 +25,21 @@
     <template v-if="series">
       <section class="stage-card">
         <div class="series-summary">
-          <div><small>活动 {{ series.id }}</small><h3>{{ titleText(series.title) }}</h3></div>
+          <div><small>{{ series.type === 'main' ? '主线' : '活动' }} {{ series.id }}</small><h3>{{ titleText(series.title) }}</h3></div>
           <b>{{ readyChapters.length }}/{{ series.chapters.length }} 章可生成</b>
         </div>
+        <section v-if="series.characters?.length" class="cover-character-versions">
+          <div><b>角色参考图版本</b><small>每个角色可改用泳装、礼服等版本；未在本地准备的版本会在生成前只下载封面所需图片。</small></div>
+          <label v-for="character in series.characters" :key="character.characterName">
+            <span>{{ character.characterName }}</span>
+            <select v-model="form.characterVersions[character.characterName]">
+              <option v-for="option in character.options" :key="option.id" :value="option.resourceName">
+                {{ option.label }}{{ option.recommended ? '（剧情推荐）' : '' }}{{ option.installed ? ' · 已就绪' : ' · 待准备' }}
+              </option>
+            </select>
+          </label>
+        </section>
+        <p v-else class="muted cover-character-empty">当前系列尚无已整理的说话人表，生成时仍会从剧情解析基础角色；如需服装版本选择，请先完成相应章节的说话人整理。</p>
         <div class="cover-series-toolbar">
           <label class="wide">整组创作指导<textarea v-model.trim="form.guidance" rows="2" placeholder="可选：整组封面想强调的基调；逐章方向仍由系列规划器轮换" /></label>
           <label>分辨率<select v-model="form.resolution"><option>1K</option><option>2K</option><option>4K</option></select></label>
@@ -114,6 +129,7 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue"
 const props = defineProps({ initialQuery: { type: String, default: "" } });
 const emit = defineEmits(["open-workspace", "error"]);
 const query = ref(props.initialQuery);
+const seriesType = ref("event");
 const series = ref(null);
 const batches = ref([]);
 const currentBatch = ref(null);
@@ -128,6 +144,7 @@ const form = reactive({
   resolution: localStorage.getItem("story-workbench-cover-resolution") || "2K",
   maxAttempts: Number(localStorage.getItem("story-workbench-cover-attempts") || 2),
   includeLobby: false,
+  characterVersions: {},
   analysisModel: localStorage.getItem("story-workbench-cover-analysis-model") || "gemini-3.7-flash",
   imageModel: storedImageModel === "gemini-3.1-flash-image-preview" ? "gemini-3.1-flash-image" : storedImageModel || "gemini-3.1-flash-image",
   qaModel: localStorage.getItem("story-workbench-cover-qa-model") || "gemini-3.7-flash",
@@ -153,7 +170,10 @@ function clearSelection() { selectedIds.value = new Set(); }
 async function resolveSeries() {
   loading.value = true; error.value = "";
   try {
-    series.value = (await api(`/api/cover-series/event?query=${encodeURIComponent(query.value)}`)).series;
+    const effectiveQuery = seriesType.value === "main" ? query.value || "all" : query.value;
+    series.value = (await api(`/api/cover-series/${seriesType.value}?query=${encodeURIComponent(effectiveQuery)}`)).series;
+    form.characterVersions = Object.fromEntries((series.value.characters || [])
+      .map(character => [character.characterName, character.selectedResourceName]));
     selectAllReady();
     const matchingBatch = batches.value.find(batch => String(batch.series?.id) === String(series.value.id));
     currentBatch.value = matchingBatch ?? null;
@@ -178,7 +198,7 @@ async function startBatch() {
   try {
     currentBatch.value = (await api("/api/cover-batches", {
       method: "POST",
-      body: JSON.stringify({ query: series.value.id, storyIds: [...selectedIds.value], params: { ...form }, confirmed: true }),
+      body: JSON.stringify({ type: series.value.type, query: series.value.id, storyIds: [...selectedIds.value], params: { ...form }, confirmed: true }),
     })).batch;
     await loadBatches();
   } catch (cause) { error.value = cause.message; }
