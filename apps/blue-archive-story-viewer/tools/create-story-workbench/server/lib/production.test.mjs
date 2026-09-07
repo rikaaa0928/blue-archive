@@ -3,9 +3,12 @@ import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
 
+import { parseCollectiveMemberKeys } from "../../lib/collective-members.mjs";
+import { getPlayerCharacterId } from "../../../create-story/ba-character-catalog.mjs";
 import {
   approveCn,
   approveVoiceScript,
+  buildStoryCharacterNameReferences,
   completeProductionPreview,
   editCn,
   editVoiceScript,
@@ -33,6 +36,13 @@ const videoPreviewIdentity = { type: "other", storyId: "999999999905" };
 const baselineIdentity = { type: "other", storyId: "999999999906" };
 const npcIdentity = { type: "other", storyId: "999999999907" };
 
+test("preserves spaces inside collective member stable keys", () => {
+  assert.deepEqual(
+    parseCollectiveMemberKeys("마시로 수영복ND, 츠루기，아즈사\n히후미"),
+    ["마시로 수영복ND", "츠루기", "아즈사", "히후미"],
+  );
+});
+
 function story() {
   return {
     GroupId: 999999999902,
@@ -42,6 +52,46 @@ function story() {
     ],
   };
 }
+
+test("builds multilingual name references from every resolvable story character key", () => {
+  const stableKey = "히후미 수영복ND";
+  const characterId = getPlayerCharacterId(stableKey);
+  const references = buildStoryCharacterNameReferences({
+    content: [
+      { ScriptKr: `1;${stableKey};00;대사\n2;히후미;00` },
+      { ScriptKr: `3;${stableKey};01;다른 대사` },
+      { ScriptKr: "1;???;00;알 수 없음" },
+      { ScriptKr: "1;일동;00;함께 말함" },
+    ],
+  }, [
+    {
+      CharacterName: characterId,
+      NameCN: "日富美（泳装）",
+      NameJP: "ヒフミ（水着）",
+      NameKR: "히후미",
+    },
+    {
+      CharacterName: getPlayerCharacterId("일동"),
+      NameCN: "一同",
+      NameJP: "一同",
+      NameKR: "일동",
+    },
+  ]);
+  assert.deepEqual(references, [
+    {
+      stableKey,
+      nameCn: "日富美（泳装）",
+      nameJp: "ヒフミ（水着）",
+      nameKr: "히후미",
+    },
+    {
+      stableKey: "일동",
+      nameCn: "一同",
+      nameJp: "一同",
+      nameKr: "일동",
+    },
+  ]);
+});
 
 test("assembly inspection recognizes ns-tagged recording choices", () => {
   const inspection = inspectAssembly({

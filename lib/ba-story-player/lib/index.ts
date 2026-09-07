@@ -20,7 +20,7 @@ import { preloadAudioUrls, soundInit } from "@/layers/soundLayer";
 import { translate } from "@/layers/translationLayer";
 import { buildStoryIndexStackRecord } from "@/layers/translationLayer/utils";
 import { disposeUiState, useUiState } from "@/stores/state";
-import { PlayerConfigs, StoryUnit } from "@/types/common";
+import { Character, PlayerConfigs, StoryUnit } from "@/types/common";
 import { watch } from "vue";
 import { excelApi } from "@/api";
 import { retry } from "radash";
@@ -625,6 +625,7 @@ export const resourcesLoader = {
   loadedList: [] as string[],
   audioUrls: new Set<string>(),
   popupImageResolutionTasks: new Map<string, Promise<string>>(),
+  characterSpineResolutionTasks: new Map<string, Promise<string>>(),
   /**
    * 初始化, 预先加载表资源供翻译层使用
    */
@@ -654,8 +655,7 @@ export const resourcesLoader = {
       //添加人物spine
       if (unit.characters.length !== 0) {
         for (const character of unit.characters) {
-          const spineUrl = character.spineUrl;
-          checkloadAssetAlias(String(character.CharacterName), spineUrl);
+          this.checkAndAddCharacterSpine(character);
         }
       }
       if (unit.audio) {
@@ -718,6 +718,7 @@ export const resourcesLoader = {
         this.loadedList.splice(0, this.loadedList.length);
         this.audioUrls.clear();
         this.popupImageResolutionTasks.clear();
+        this.characterSpineResolutionTasks.clear();
         hasLoad = true;
         callback();
       }
@@ -727,6 +728,7 @@ export const resourcesLoader = {
       this.loadedList.splice(0, this.loadedList.length);
       this.audioUrls.clear();
       this.popupImageResolutionTasks.clear();
+      this.characterSpineResolutionTasks.clear();
       errorCallback(
         error instanceof Error ? error : new Error(String(error))
       );
@@ -748,6 +750,70 @@ export const resourcesLoader = {
       }
       checkloadAssetAlias(url, url);
     }
+  },
+
+  /**
+   * Load a character Spine from its routed store, falling back to the other
+   * known store on HTTP, atlas, or skeleton parsing failures. Every occurrence
+   * of the same URL shares one resolution task and is updated to the URL that
+   * actually loaded successfully before playback begins.
+   */
+  checkAndAddCharacterSpine(character: Character) {
+    const primaryUrl = character.spineUrl;
+    let resolutionTask = this.characterSpineResolutionTasks.get(primaryUrl);
+    if (!resolutionTask) {
+      resolutionTask = (async () => {
+        let primaryFailure: unknown;
+        try {
+          await loadAssetAlias(
+            String(character.CharacterName),
+            primaryUrl,
+            false
+          );
+          return primaryUrl;
+        } catch (error) {
+          primaryFailure = error;
+        }
+
+        const fallbackUrl = utils.getCharacterSpineFallbackUrl(primaryUrl);
+        if (!fallbackUrl) {
+          console.error(
+            `[character Spine fallback] no fallback candidate for ${primaryUrl}`,
+            primaryFailure
+          );
+          throw primaryFailure;
+        }
+
+        console.warn(
+          `[character Spine fallback] ${primaryUrl} failed; trying ${fallbackUrl}`
+        );
+        try {
+          await loadAssetAlias(fallbackUrl, fallbackUrl, false);
+        } catch (fallbackFailure) {
+          console.error(
+            `[character Spine fallback] both candidates failed: ${primaryUrl} -> ${fallbackUrl}`,
+            primaryFailure,
+            fallbackFailure
+          );
+          eventBus.emit("oneResourceLoaded", {
+            type: "fail",
+            resourceName: fallbackUrl.substring(
+              fallbackUrl.lastIndexOf("/") + 1
+            ),
+          });
+          throw fallbackFailure;
+        }
+        console.info(`[character Spine fallback] resolved ${fallbackUrl}`);
+        return fallbackUrl;
+      })();
+      this.characterSpineResolutionTasks.set(primaryUrl, resolutionTask);
+    }
+
+    this.loadTaskList.push(
+      resolutionTask.then(resolvedUrl => {
+        character.spineUrl = resolvedUrl;
+      })
+    );
   },
 
   /**

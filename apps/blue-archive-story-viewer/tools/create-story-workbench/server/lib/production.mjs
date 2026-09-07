@@ -5,11 +5,14 @@ import {
   findRecordingOptionPages,
   parseRecordingOptions,
 } from "../../../create-story/recording-selections.mjs";
+import { getPlayerCharacterId } from "../../../create-story/ba-character-catalog.mjs";
 import { parseScenarioScriptSpeakers } from "../../../create-story/scenario-script-speakers.mjs";
+import { normalizeCollectiveMemberKeys } from "../../lib/collective-members.mjs";
 
 import {
   applyTtsSkipDecision,
   jsonDigest,
+  localFilesRoot,
   nowIso,
   publicStoryPath,
   readJson,
@@ -72,6 +75,43 @@ function ensureProduction(identityOrId) {
 
 function textRows(story, field) {
   return story.content.map((unit, index) => ({ index, text: String(unit[field] ?? "") }));
+}
+
+export function buildStoryCharacterNameReferences(story, characterTable = []) {
+  const rowsById = new Map(characterTable.map(rawRow => {
+    const row = rawRow?.Bytes ?? rawRow;
+    return [Number(row?.CharacterName), row];
+  }));
+  const seen = new Set();
+  const references = [];
+  for (const unit of story?.content ?? []) {
+    for (const stableKey of parseScenarioScriptSpeakers(unit).speakers) {
+      if (seen.has(stableKey)) continue;
+      seen.add(stableKey);
+      const row = rowsById.get(getPlayerCharacterId(stableKey));
+      if (!row) continue;
+      references.push({
+        stableKey,
+        nameCn: String(row.NameCN ?? ""),
+        nameJp: String(row.NameJP ?? ""),
+        nameKr: String(row.NameKR ?? stableKey),
+      });
+    }
+  }
+  return references;
+}
+
+function storyCharacterNameReferences(story) {
+  const tablePath = path.join(
+    localFilesRoot,
+    "player-data",
+    "ScenarioCharacterNameExcelTable.json",
+  );
+  const payload = readJson(tablePath, []);
+  const rows = Array.isArray(payload)
+    ? payload
+    : payload.content ?? payload.DataList ?? [];
+  return buildStoryCharacterNameReferences(story, rows);
 }
 
 function trackDigest(rows, extra = {}) {
@@ -402,6 +442,7 @@ export function getProduction(identityOrId, { includeStory = true, includeHistor
       speakers: {
         ...speakers,
         items: speakerItems,
+        characterNameReferences: storyCharacterNameReferences(baseStory),
         ready: Boolean(speakers.scannedAt && unresolvedSpeakers.length === 0),
         unresolvedCount: unresolvedSpeakers.length,
       },
@@ -834,8 +875,7 @@ export function updateSpeakerResolution(identityOrId, stableKey, resolution, not
   if (type === "npc") {
     normalizedResolution = { type: "npc", preset: "anonymous-npc-v4" };
   } else if (item.reason === "collective-speaker") {
-    const members = [...new Set((resolution?.members ?? []).map(String)
-      .map(value => value.trim()).filter(Boolean))];
+    const members = normalizeCollectiveMemberKeys(resolution?.members);
     if (type !== "collective" || members.length < 2) {
       throw new Error("A collective speaker requires at least two stable Korean member keys");
     }

@@ -5,6 +5,37 @@ import { execFileSync } from 'child_process';
 import { normalizeStoryPath } from '../../tools/create-story/story-path.mjs';
 import { resolveRecordOutputPath } from './record-output-path.mjs';
 
+const captureSampleRate = 48000;
+
+function findCaptureMarkerSeconds(audioPath) {
+  const pcm = execFileSync(
+    'ffmpeg',
+    [
+      '-v', 'error',
+      '-i', audioPath,
+      '-map', '0:a:0',
+      '-af', 'highpass=f=18000,lowpass=f=20000',
+      '-ac', '1',
+      '-ar', String(captureSampleRate),
+      '-f', 's16le',
+      'pipe:1',
+    ],
+    { maxBuffer: 256 * 1024 * 1024 },
+  );
+  const windowSamples = Math.round(captureSampleRate * 0.005);
+  for (let sample = 0; sample + windowSamples <= pcm.length / 2; sample += windowSamples) {
+    let squareSum = 0;
+    for (let inner = 0; inner < windowSamples; inner += 1) {
+      const value = pcm.readInt16LE((sample + inner) * 2);
+      squareSum += value * value;
+    }
+    if (Math.sqrt(squareSum / windowSamples) >= 3000) {
+      return sample / captureSampleRate;
+    }
+  }
+  throw new Error('Cannot find the recording synchronization marker');
+}
+
 function parseArguments(argv) {
   let rawStoryPath = 'groupStory/1101';
   let headless = true;
@@ -200,7 +231,10 @@ async function main() {
       } else {
         console.error(`[browser console] ${text}`);
       }
-    } else if (text.startsWith('[popup fallback]')) {
+    } else if (
+      text.startsWith('[popup fallback]') ||
+      text.startsWith('[character Spine fallback]')
+    ) {
       console.log(`[browser console:${type}] ${text}`);
     }
   });
@@ -288,6 +322,18 @@ async function main() {
           throw new Error("No masterGain found!");
         }
 
+        // Keep Chromium's capture graph advancing during completely silent
+        // title/effect gaps. Without an active source, MediaRecorder can omit
+        // the opening silence and make all later audio start too early.
+        const captureClock = audioCtx.createOscillator();
+        const captureClockGain = audioCtx.createGain();
+        captureClock.frequency.value = 30;
+        captureClockGain.gain.value = 0.01;
+        captureClock.connect(captureClockGain).connect(dest);
+        captureClock.start();
+        window.__RECORDING_CAPTURE_CLOCK__ = captureClock;
+        window.__RECORDING_AUDIO_DEST__ = dest;
+
         window.mediaRecorder = new MediaRecorder(dest.stream, { mimeType: 'audio/webm; codecs=opus' });
         window.__RECORDING_AUDIO_CHUNK_COUNT__ = 0;
         window.__RECORDING_AUDIO_BYTE_COUNT__ = 0;
@@ -344,7 +390,30 @@ async function main() {
 
   const playStartTime = Date.now();
   console.log('Capture ready. Starting the recording page automatically...');
-  await page.evaluate(() => window.__START_STORY_RECORDING__());
+  await page.evaluate(() => {
+    window.__EMIT_RECORDING_SYNC_MARKER__ = () => {
+      if (Number.isFinite(window.__RECORDING_DIALOG_MARKER_PERF__)) return;
+      window.__RECORDING_DIALOG_MARKER_PERF__ = performance.now();
+      const audioCtx = window.Howler.ctx;
+      const marker = audioCtx.createOscillator();
+      const markerGain = audioCtx.createGain();
+      marker.frequency.value = 19000;
+      markerGain.gain.value = 0.5;
+      marker.connect(markerGain).connect(window.__RECORDING_AUDIO_DEST__);
+      marker.start();
+      marker.stop(audioCtx.currentTime + 0.2);
+    };
+    const markFirstDialog = () => {
+      const dialog = document.querySelector('#player__text_inner_dialog');
+      if (!dialog?.textContent?.trim()) return;
+      observer.disconnect();
+      window.__EMIT_RECORDING_SYNC_MARKER__();
+    };
+    const observer = new MutationObserver(markFirstDialog);
+    observer.observe(document.body, { childList: true, characterData: true, subtree: true });
+    window.__RECORDING_PLAYBACK_PERF__ = performance.now();
+    window.__START_STORY_RECORDING__();
+  });
   await page.waitForFunction(
     () => window.__STORY_RECORDING_STARTED__ === true,
     undefined,
@@ -396,11 +465,25 @@ async function main() {
   }
 
   console.log('Story play ended natively. Wrapping up audio streams...');
+  await page.evaluate(async () => {
+    if (!Number.isFinite(window.__RECORDING_DIALOG_MARKER_PERF__)) {
+      window.__EMIT_RECORDING_SYNC_MARKER__();
+      await new Promise(resolve => setTimeout(resolve, 250));
+    }
+  });
+  const browserSync = await page.evaluate(() => ({
+    playbackPerf: window.__RECORDING_PLAYBACK_PERF__,
+    dialogMarkerPerf: window.__RECORDING_DIALOG_MARKER_PERF__,
+  }));
+  if (!Number.isFinite(browserSync.dialogMarkerPerf)) {
+    throw new Error('The first-dialog recording synchronization marker was not emitted');
+  }
   await page.evaluate(() => {
     return new Promise((resolve) => {
       if (window.mediaRecorder && window.mediaRecorder.state !== 'inactive') {
         window.mediaRecorder.onstop = () => setTimeout(resolve, 500);
         window.mediaRecorder.stop();
+        window.__RECORDING_CAPTURE_CLOCK__?.stop();
       } else {
         resolve();
       }
@@ -416,6 +499,16 @@ async function main() {
   const trimSeconds = (audioRecorderStartTime - videoStartTime) / 1000.0;
   const audioLeadSeconds =
     (playStartTime - audioRecorderStartTime) / 1000.0;
+  const captureMarkerSeconds = findCaptureMarkerSeconds(tempAudioDest);
+  const playbackVideoTimeSeconds =
+    (playStartTime - videoStartTime) / 1000.0;
+  const dialogVideoTimeSeconds = playbackVideoTimeSeconds +
+    (browserSync.dialogMarkerPerf - browserSync.playbackPerf) / 1000.0;
+  const mediaRecorderCodecDelaySeconds = 0.5;
+  const audioTimelineOffsetSeconds = Math.max(
+    0,
+    dialogVideoTimeSeconds - captureMarkerSeconds + mediaRecorderCodecDelaySeconds,
+  );
   const finalPrerollSeconds = 0.5;
   const recommendedFinalTrimSeconds = Math.max(
     0,
@@ -424,7 +517,7 @@ async function main() {
 
   console.log(`Muxing Audio and Video together using ffmpeg...`);
   console.log(
-    `Placing audio at ${trimSeconds.toFixed(3)} seconds on the video ` +
+    `Placing audio at ${audioTimelineOffsetSeconds.toFixed(3)} seconds on the video ` +
       `timeline (playback began ` +
       `${audioLeadSeconds.toFixed(3)} seconds later).`,
   );
@@ -437,7 +530,7 @@ async function main() {
         '-i',
         videoTempPath,
         '-itsoffset',
-        String(trimSeconds),
+        String(audioTimelineOffsetSeconds),
         '-i',
         tempAudioDest,
         '-map',
@@ -446,8 +539,10 @@ async function main() {
         '1:a:0',
         '-c:v',
         'copy',
+        '-af',
+        'highpass=f=80,lowpass=f=16000',
         '-c:a',
-        'copy',
+        'libopus',
         finalDest,
       ],
       { stdio: 'ignore' },
@@ -456,6 +551,11 @@ async function main() {
       syncMetadataDest,
       `${JSON.stringify({
         videoStartToAudioStartSeconds: trimSeconds,
+        captureMarkerSeconds,
+        playbackVideoTimeSeconds,
+        dialogVideoTimeSeconds,
+        mediaRecorderCodecDelaySeconds,
+        audioTimelineOffsetSeconds,
         audioStartToPlaybackSeconds: audioLeadSeconds,
         finalPrerollSeconds,
         recommendedFinalTrimSeconds,

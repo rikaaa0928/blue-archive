@@ -49,7 +49,7 @@
         <p class="stage-description">两轮 LLM 负责整体校对；整体通过后，人工微调区永久可编辑。微调只会使最终装配失效，不会影响语音线。</p>
 
         <div class="production-toolbar">
-          <label>简中校对模型<input v-model.trim="cnModel" placeholder="gemini-3.7-flash" /></label>
+          <label>简中校对模型<input v-model.trim="cnModel" placeholder="gemini-3.1-pro-preview" /></label>
           <label class="wide">整体重做指导意见<textarea v-model="cnGuidance" rows="2" placeholder="不满意时补充方向，再重新生成全部字幕" /></label>
           <button class="primary" :disabled="busy" @click="generateCn">
             {{ production.cn.generationCount ? '按指导整体重新生成' : '运行两轮 LLM 校对' }}
@@ -106,9 +106,33 @@
           <button v-if="!production.voice.speakers.scannedAt" class="primary" :disabled="busy" @click="run('production-speaker-scan')">自动识别说话人</button>
           <div v-else class="speaker-review-layout">
             <div class="speaker-exceptions">
+              <details v-if="storyCharacterNameReferences.length" class="story-character-reference" open>
+                <summary>当前剧情角色名参考（{{ storyCharacterNameReferences.length }}）</summary>
+                <p>团体发言成员必须使用“韩文稳定 key”。点击最右侧按钮即可复制。</p>
+                <div class="story-character-reference-table-wrap">
+                  <table>
+                    <thead><tr><th>中文名</th><th>日本語名</th><th>한국어名</th><th>韩文稳定 key</th></tr></thead>
+                    <tbody>
+                      <tr v-for="character in storyCharacterNameReferences" :key="character.stableKey">
+                        <td>{{ character.nameCn || '—' }}</td>
+                        <td lang="ja">{{ character.nameJp || '—' }}</td>
+                        <td lang="ko">{{ character.nameKr || '—' }}</td>
+                        <td><button type="button" class="speaker-key-copy" :class="{ copied: copiedSpeakerKey === character.stableKey }" :title="`复制 ${character.stableKey}`" @click="copySpeakerKey(character.stableKey)"><code>{{ character.stableKey }}</code><span>{{ copiedSpeakerKey === character.stableKey ? '已复制' : '复制' }}</span></button></td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </details>
               <article v-for="item in humanSpeakers" :key="item.stableKey" :class="{ active: activeSpeakerKey === item.stableKey }">
                 <header class="speaker-exception-heading">
-                  <div><b>{{ item.sourceSpeaker || '???' }}</b><small>{{ speakerIndices(item).length }} 处台词 · {{ item.reason }}</small></div>
+                  <div>
+                    <b lang="ko">{{ item.sourceSpeaker || '???' }}</b>
+                    <span v-if="speakerNameReference(item)" class="speaker-source-name-reference">
+                      <em>中文：{{ speakerNameReference(item).nameCn || '—' }}</em>
+                      <em lang="ja">日本語：{{ speakerNameReference(item).nameJp || '—' }}</em>
+                    </span>
+                    <small>{{ speakerIndices(item).length }} 处台词 · {{ item.reason }}</small>
+                  </div>
                   <div class="speaker-occurrences">
                     <button v-for="index in speakerIndices(item)" :key="index" :class="['ghost', 'small', { active: activeSpeakerKey === item.stableKey && selectedSpeakerIndex(item) === index }]" @click="locateSpeaker(item, index)">▶ #{{ index }}</button>
                   </div>
@@ -286,6 +310,7 @@
 <script setup lang="ts">
 import { computed, defineComponent, h, nextTick, onMounted, ref, watch } from "vue";
 import StoryPlayer from "ba-story-player";
+import { parseCollectiveMemberKeys } from "../../lib/collective-members.mjs";
 import CoverPanel from "./CoverPanel.vue";
 
 const props = defineProps({ workspaceId: String, section: String, busy: Boolean, latestJob: Object, status: Object });
@@ -305,6 +330,8 @@ const speakerContextStory = ref(null); const speakerPlayerIndex = ref(undefined)
 const activeSpeakerKey = ref(""); const activeSpeakerIndex = ref(null); const speakerOccurrenceSelection = ref({});
 const speakerPlayerReady = ref(false); const pendingSpeakerIndex = ref(null); const locatedSpeakerIndex = ref(null);
 const speakerPlayerMuted = ref(true);
+const copiedSpeakerKey = ref("");
+let copiedSpeakerKeyTimer: number | undefined;
 
 const HistoryList = defineComponent({ props: { title: String, records: Array }, setup(inner) { return () => h("details", { class: "history-box" }, [h("summary", `${inner.title}（${inner.records?.length || 0}）`), ...(inner.records || []).slice().reverse().map(record => h("article", [h("header", [h("b", record.id), h("small", formatTime(record.editedAt))]), h("p", record.note || "无说明"), h("pre", JSON.stringify(record.changes || record.skipDecision || {}, null, 2))]))]); } });
 
@@ -314,9 +341,9 @@ async function loadTtsLines() { const payload = await api("/tts/lines"); ttsLine
 async function loadSpeakerContextStory() { if (speakerContextStory.value) return; speakerContextStory.value = (await api("/context-story")).story; }
 function syncDrafts() { if (!production.value) return; cnDraft.value = Object.fromEntries(production.value.story.map(row => [row.index, row.TextCn])); scriptDraft.value = Object.fromEntries(production.value.story.map(row => [row.index, row.TextJpVoice])); speakerDraft.value = Object.fromEntries(production.value.voice.speakers.items.map(item => [item.stableKey, { type: item.resolution?.type || (item.reason === "collective-speaker" ? "collective" : "character"), stableKey: item.resolution?.stableKey || "", characterName: item.resolution?.characterName || "", membersText: (item.resolution?.members || []).join(", ") }])); const first = humanSpeakers.value[0]; if (first && !activeSpeakerKey.value) { activeSpeakerKey.value = first.stableKey; activeSpeakerIndex.value = speakerIndices(first)[0] ?? null; speakerOccurrenceSelection.value[first.stableKey] = activeSpeakerIndex.value; } }
 function run(action, params = {}) { emit("run", action, params); }
-function persistModel(target, storageKey) { if (!target.value) target.value = "gemini-3.7-flash"; localStorage.setItem(storageKey, target.value); return target.value; }
+function persistModel(target, storageKey, defaultModel = "gemini-3.7-flash") { if (!target.value) target.value = defaultModel; localStorage.setItem(storageKey, target.value); return target.value; }
 async function mutate(suffix, method, body) { try { await api(suffix, { method, body: JSON.stringify(body) }); await load(); emit("changed"); } catch (cause) { emit("error", cause); } }
-function generateCn() { const model = persistModel(cnModel, "story-workbench-cn-llm-model"); run("production-cn-generate", { model, guidance: cnGuidance.value, refreshCache: Boolean(production.value.cn.generationCount) }); }
+function generateCn() { const model = persistModel(cnModel, "story-workbench-cn-llm-model", "gemini-3.1-pro-preview"); run("production-cn-generate", { model, guidance: cnGuidance.value, refreshCache: Boolean(production.value.cn.generationCount) }); }
 function generateScript() { const model = persistModel(scriptModel, "story-workbench-voice-script-llm-model"); run("production-voice-script-generate", { model, guidance: scriptGuidance.value }); }
 function approveCn() { mutate("/cn/approve", "POST", { runId: selectedCnRunId.value }); } function approveScript() { mutate("/voice-script/approve", "POST", { runId: selectedScriptRunId.value }); }
 function revokeCnApproval() { const count = Number(production.value?.cn.editCount || 0); if (!window.confirm(`撤销当前简中方案确认，并永久清除 ${count} 条人工微调记录？LLM 生成方案不会删除。`)) return; mutate("/cn/revoke-approval", "POST", {}); }
@@ -338,6 +365,9 @@ const scriptChangedCount = computed(() => (production.value?.story || []).filter
 function saveCn() { const changes = production.value.story.filter(row => cnDraft.value[row.index] !== row.TextCn).map(row => ({ index: row.index, text: cnDraft.value[row.index] })); mutate("/cn", "PATCH", { changes, note: cnEditNote.value }); }
 function saveScript() { const changes = production.value.story.filter(row => scriptDraft.value[row.index] !== row.TextJpVoice).map(row => ({ index: row.index, text: scriptDraft.value[row.index] })); mutate("/voice-script", "PATCH", { changes, note: scriptEditNote.value }); }
 const humanSpeakers = computed(() => production.value?.voice.speakers.items.filter(item => item.requiresHuman) || []);
+const storyCharacterNameReferences = computed(() => production.value?.voice.speakers.characterNameReferences || []);
+const storyCharacterNameReferenceByKey = computed(() => new Map(storyCharacterNameReferences.value.map(item => [item.stableKey, item])));
+function speakerNameReference(item) { return storyCharacterNameReferenceByKey.value.get(item.sourceSpeaker) || storyCharacterNameReferenceByKey.value.get(item.stableKey); }
 const speakerContextPlayerKey = computed(() => `${props.workspaceId}:${production.value?.base.digest || "context"}`);
 function speakerIndices(item) { return [...new Set((item.storyIndices || (Number.isSafeInteger(item.storyIndex) ? [item.storyIndex] : [])).map(Number).filter(Number.isSafeInteger))]; }
 function selectedSpeakerIndex(item) { return Number.isSafeInteger(speakerOccurrenceSelection.value[item.stableKey]) ? speakerOccurrenceSelection.value[item.stableKey] : (speakerIndices(item)[0] ?? null); }
@@ -348,7 +378,9 @@ async function handleSpeakerPlayerInitiated() { speakerPlayerReady.value = true;
 const knownSpeakers = computed(() => { const byKey = new Map(); for (const item of production.value?.voice.speakers.items || []) if (item.resolution?.type === "character") byKey.set(item.resolution.stableKey, item.resolution); return [...byKey.values()]; });
 const referenceSpeakers = computed(() => { const byKey = new Map(knownSpeakers.value.map(item => [item.stableKey, item])); for (const item of production.value?.voice.speakers.items || []) { if (item.resolution?.type === "collective") for (const stableKey of item.resolution.members || []) if (!byKey.has(stableKey)) byKey.set(stableKey, { stableKey, characterName: stableKey }); } return [...byKey.values()]; });
 function fillSpeakerCharacterName(item) { const draft = speakerDraft.value[item.stableKey]; if (!draft || draft.type !== "character") return; const known = knownSpeakers.value.find(candidate => candidate.stableKey === draft.stableKey); if (known) draft.characterName = known.characterName; }
-function saveSpeaker(item) { fillSpeakerCharacterName(item); const draft = speakerDraft.value[item.stableKey]; const resolution = draft.type === "collective" ? { type: "collective", members: draft.membersText.split(/[,，\s]+/u).filter(Boolean) } : draft; mutate(`/speakers/${encodeURIComponent(item.stableKey)}`, "PATCH", { resolution, note: "人工确认说话人例外" }); }
+async function copyText(value) { const textarea = document.createElement("textarea"); textarea.value = value; textarea.style.position = "fixed"; textarea.style.opacity = "0"; document.body.appendChild(textarea); textarea.select(); const copied = document.execCommand("copy"); textarea.remove(); if (copied) return; if (navigator.clipboard) { await navigator.clipboard.writeText(value); return; } throw new Error("无法复制韩文稳定 key，请手动选择文本复制"); }
+async function copySpeakerKey(stableKey) { try { await copyText(stableKey); copiedSpeakerKey.value = stableKey; window.clearTimeout(copiedSpeakerKeyTimer); copiedSpeakerKeyTimer = window.setTimeout(() => { if (copiedSpeakerKey.value === stableKey) copiedSpeakerKey.value = ""; }, 1600); } catch (cause) { emit("error", cause); } }
+function saveSpeaker(item) { fillSpeakerCharacterName(item); const draft = speakerDraft.value[item.stableKey]; const resolution = draft.type === "collective" ? { type: "collective", members: parseCollectiveMemberKeys(draft.membersText) } : draft; mutate(`/speakers/${encodeURIComponent(item.stableKey)}`, "PATCH", { resolution, note: "人工确认说话人例外" }); }
 async function loadReference(stableKey) { try { activeReferenceSpeaker.value = stableKey; referenceDetail.value = await api(`/references/${encodeURIComponent(stableKey)}`); referenceSelected.value = new Set(referenceDetail.value.selected); } catch (cause) { emit("error", cause); } }
 function toggleReference(name, checked) { const next = new Set(referenceSelected.value); if (checked) next.add(name); else next.delete(name); referenceSelected.value = next; }
 async function saveReference() { const stableKey = activeReferenceSpeaker.value; try { await api(`/references/${encodeURIComponent(stableKey)}`, { method: "PUT", body: JSON.stringify({ selected: [...referenceSelected.value], note: `人工微调 ${stableKey} 参考音` }) }); await load(); await loadReference(stableKey); } catch (cause) { emit("error", cause); } }

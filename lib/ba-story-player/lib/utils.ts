@@ -111,7 +111,7 @@ export function getResourcesUrl(type: ResourcesTypes, arg: string): string {
       const skelPath = superSampling
         ? `${dataUrl}/spine/${filename}/${filename}${superSampling}/${filename}.skel`
         : `${dataUrl}/spine/${filename}/${filename}.skel`;
-      // ch*/np* and generic Sukeban sprites exist only on
+      // ch*/np* and generic Sukeban sprites exist on
       // ba-all-data-spine42 (Spine 4.2). The swimsuit Sukeban NPCs use
       // schoolGirl* prefab names but live in the same Spine 4.2 repository.
       // Most named character sprites live on ba-all-data; spine42 has stale
@@ -157,6 +157,23 @@ export function getPopupImageFallbackUrl(url: string): string | undefined {
     return undefined;
   }
   return `${match[1]}Popup${match[3]}`;
+}
+
+/**
+ * Character Spine files are split between the legacy and Spine 4.2 stores.
+ * Keep the routed URL as the primary candidate and try the other store only
+ * when loading or parsing it fails.
+ */
+export function getCharacterSpineFallbackUrl(url: string): string | undefined {
+  const spine42Marker = "/ba-all-data-spine42/";
+  const legacyMarker = "/ba-all-data/";
+  if (url.includes(spine42Marker)) {
+    return url.replace(spine42Marker, legacyMarker);
+  }
+  if (url.includes(legacyMarker)) {
+    return url.replace(legacyMarker, spine42Marker);
+  }
+  return undefined;
 }
 
 /**

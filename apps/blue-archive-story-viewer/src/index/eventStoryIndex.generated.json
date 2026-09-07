@@ -141,7 +141,133 @@
           "TextEn": "Each student pretends not to know how to swim to receive lessons from Sensei. The only ones fooled are the thugs, who use it as an opportunity to strike.",
           "TextTw": "因為老師說這是個游泳教學的任務，所以大家開始假裝不會游泳。但是被演技欺騙撲上來的不是老師而是太妹們。"
         },
-        "previous": 10002045
+        "previous": 10002045,
+        "next": 10002065
+      },
+      {
+        "title": {
+          "TextJp": "泳ぎを習得する（２）",
+          "TextCn": "学会游泳（２）",
+          "TextKr": "수영 배우기 2",
+          "TextTh": "เรียนว่ายน้ำ 2",
+          "TextEn": "Swimming Lessons Part 2",
+          "TextTw": "學會游泳（２）"
+        },
+        "story_id": 10002065,
+        "abstract": {
+          "TextJp": "スケバンたちを無事追い払うことに成功。戦闘が続く中で「なるほど、これが海か」と口にするアズサに対して、ヒフミは力無く首を横に振るのだった。",
+          "TextCn": "面对梓询问夏天的海边是不是本来就这样，日富美无力地给了否定的回答。",
+          "TextKr": "원래 여름 바다가 이런 식이냐고 묻는 아즈사에게 히후미는 절대 그렇지 않다고 힘없이 대답한다.",
+          "TextTh": "เมื่ออาซึสะเกิดสงสัยว่าสิ่งที่ทำอยู่เป็นวิถีปกติของการมาเที่ยวทะเลในฤดู\nร้อนหรือไม่ ฮิฟุมิก็ได้แต่ปฏิเสธไปอย่างเหนื่อยใจ",
+          "TextEn": "Hifumi reluctantly tells Azusa this is not usually what the beach is like during the summer.",
+          "TextTw": "面對梓詢問夏天的海邊是不是本來就這樣，日步美無力地給了否定的回答。"
+        },
+        "previous": 10002050,
+        "next": 10002070
+      },
+      {
+        "title": {
+          "TextJp": "海の家（１）",
+          "TextCn": "海之家（１）",
+          "TextKr": "바다의 집 1",
+          "TextTh": "ร้านริมทะเล 1",
+          "TextEn": "Beach Shack Part 1",
+          "TextTw": "海之家（１）"
+        },
+        "story_id": 10002070,
+        "abstract": {
+          "TextJp": "海の家に入ると、そこにいたのはゲヘナの美食研究会の一員であるイズミだった。奇怪な名前のメニューを頼もうとしたその時、すでに被害を受けていたスケバンたちが復讐に乗り込んでくる。",
+          "TextCn": "虽然抵达海之家，代替主人的却是泉。因为泉而受伤的太妹们已经开始进行报复了。",
+          "TextKr": "바다의 집으로 도착했지만 주인장 대신 자리 잡고 있던 것은 이즈미였다. 이미 이즈미에게 피해를 입었던 불량배들이 복수를 시작한다.",
+          "TextTh": "พอมาถึงที่ร้านริมทะเล และก็พบว่าคนที่ทำหน้าที่แทนเจ้าของร้านอยู่ก็คือ\nอิซุมิ เหล่าแยงกี้สาวที่ถูกอิซุมิโจมตีก็ได้เริ่มการแก้แค้นขึ้น",
+          "TextEn": "Upon arriving at the Beach Shack, Izumi is there rather than the owner. Meanwhile, the thugs Izumi beat up begin their revenge.",
+          "TextTw": "雖然抵達海之家，代替主人的卻是泉。因為泉而受傷的太妹們已經開始進行報復了。"
+        },
+        "previous": 10002065,
+        "next": 10002085
+      },
+      {
+        "title": {
+          "TextJp": "海の家（２）",
+          "TextCn": "海之家（２）",
+          "TextKr": "바다의 집 2",
+          "TextTh": "ร้านริมทะเล 2",
+          "TextEn": "Beach Shack Part 2",
+          "TextTw": "海之家（２）"
+        },
+        "story_id": 10002085,
+        "abstract": {
+          "TextJp": "スケバンたちを追い払い、イズミから感謝の印として飲み物を受け取る一同。しかしその灰色の飲み物は……。",
+          "TextCn": "协助泉将太妹们扳倒以后，泉招待了美食以示感谢。不过那些也全都是泉特制的菜单。",
+          "TextKr": "이즈미를 도와 불량배들을 쓰러뜨리고 감사의 의미로 음식을 대접받는다. 하지만 그것들도 모두 이즈미 특제의 메뉴들이었다.",
+          "TextTh": "เจ้าของร้านได้เลี้ยงขอบคุณทุกคนที่ช่วยอิซุมิจัดการกลุ่มแยงกี้สาว แต่ว่า\nอาหารที่เจ้าของร้านเลี้ยงกลับเป็นเมนูพิเศษของอิซุมิทั้งหมด",
+          "TextEn": "Izumi treats Sensei to meal as a token of her appreciation for helping with the thugs. Too bad it was all from Izumi's special menu.",
+          "TextTw": "協助泉將太妹們扳倒以後，泉招待了美食以示感謝。不過那些也全都是泉特製的菜單。"
+        },
+        "previous": 10002070,
+        "next": 10002090
+      },
+      {
+        "title": {
+          "TextJp": "スイカ割り（１）",
+          "TextCn": "打西瓜（１）",
+          "TextKr": "수박깨기 1",
+          "TextTh": "ปิดตาตีแตงโม 1",
+          "TextEn": "Smashing Watermelons Part 1",
+          "TextTw": "打西瓜（１）"
+        },
+        "story_id": 10002090,
+        "abstract": {
+          "TextJp": "スイカ割り（？）を始めた一同の元に、再びイズミが登場。「食べ物で遊んではいけない」というある意味真っ当な理屈を述べられ、やむを得ず対立することに。",
+          "TextCn": "为了要打西瓜，从大海之家的主人那边拿到了西瓜。但是泉拿了西瓜就跑，所以展开了追逐战。",
+          "TextKr": "수박깨기를 하기 위해 바다의 집 주인에게 수박을 얻어왔다. 하지만 이즈미가 가지고 달아나면서 추격전을 벌이게 된다.",
+          "TextTh": "เจ้าของร้านริมทะเลได้ให้แตงโมมาเพื่อให้ทุกคนได้เล่นเกมปิดตาตีแตงโม\nแต่ว่าอิซุมิได้หอบแตงโมทั้งหมดหนีไปและการไล่ตามอิซุมิก็ได้เริ่มขึ้น",
+          "TextEn": "Sensei fetches a watermelon from the Beach Shack owner, but Izumi snatches it and a chase ensues.",
+          "TextTw": "為了要打西瓜，從大海之家的主人那邊拿到了西瓜。但是泉拿了西瓜就跑，所以展開了追逐戰。"
+        },
+        "previous": 10002085,
+        "next": 10002105
+      },
+      {
+        "title": {
+          "TextJp": "スイカ割り（２）",
+          "TextCn": "打西瓜（２）",
+          "TextKr": "수박깨기 2",
+          "TextTh": "ปิดตาตีแตงโม 2",
+          "TextEn": "Smashing Watermelons Part 2",
+          "TextTw": "打西瓜（２）"
+        },
+        "story_id": 10002105,
+        "abstract": {
+          "TextJp": "イズミに打ち勝った一同だったが、どことなく虚しさが残る結果に。スイカ割りに使ったスイカは、きちんと全員で美味しくいただくことにした。",
+          "TextCn": "将泉击倒后拿回西瓜，但是心里有点不舒服。还好后来也好好品尝了剩下的西瓜。",
+          "TextKr": "이즈미를 쓰러뜨리고 수박을 되찾지만 찝찝함만이 남는다. 다행히 이후 남은 수박도 맛있게 먹었다.",
+          "TextTh": "ทุกคนไล่ตามอิซุมิทันและได้แตงโมงคืน แต่จู่ๆ ก็เกิดรู้สึกไม่สบายใจขึ้นมา\nและโชคดีที่หลังจากนั้นทุกคนก็นำแตงโมมากินกันอย่างเอร็ดอร่อย",
+          "TextEn": "Izumi is taken down and the watermelon is recovered, but an uncomfortable feeling remains. Fortunately, the remaining watermelons were delicious.",
+          "TextTw": "將泉擊倒後拿回西瓜，但是心裡有點不舒服。還好後來也好好品嚐了剩下的西瓜。"
+        },
+        "previous": 10002090,
+        "next": 10002110
+      },
+      {
+        "title": {
+          "TextJp": "ビーチバレー",
+          "TextCn": "沙滩排球",
+          "TextKr": "비치 발리볼",
+          "TextTh": "วอลเลย์บอลชายหาด",
+          "TextEn": "Beach Volleyball",
+          "TextTw": "沙灘排球"
+        },
+        "story_id": 10002110,
+        "abstract": {
+          "TextJp": "相次ぐ戦闘にやや疲弊状態のヒフミ。これで良かったのかなとつぶやく彼女のもとに、もう何度目かのスケバンたちが現れる。",
+          "TextCn": "因为接连而来的突发状况而感到疲惫的日富美呈现自暴自弃的状态。然后如日富美所预想，太妹们又再次攻了进来。",
+          "TextKr": "연이은 돌발상황에 지쳐버린 히후미는 자포자기한 상태가 된다. 그리고 히후미의 예상대로 또다시 불량배들이 쳐들어온다.",
+          "TextTh": "หลังจากเกิดเหตุการณ์ที่ไม่คาดคิดหลายอย่าง ฮิฟุมิก็เริ่มรู้สึกท้อแท้ขึ้นมา\nและก็เป็นไปตามที่ฮิฟุมิคาดการณ์ไว้ พวกกลุ่มแยงกี้สาวได้ปรากฏตัวต่อ\nหน้าพวกเธออีกครั้ง",
+          "TextEn": "Hifumi grows tired from the unexpected situations and starts to become desperate. The thugs then attack again, just as Hifumi was afraid of.",
+          "TextTw": "因為接連而來的突發狀況而感到疲憊的日步美呈現自暴自棄的狀態。然後如日步美所預想，太妹們又再次攻了進來。"
+        },
+        "previous": 10002105
       }
     ]
   },
