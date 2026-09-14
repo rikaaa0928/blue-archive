@@ -14,6 +14,7 @@ import {
 } from "./fill-text-cn-from-tw.mjs";
 import { loadTraditionalToSimplifiedCharacterNameMap } from "./ba-character-catalog.mjs";
 import { proofreadStoryTextCnWithLlm } from "./proofread-text-cn-with-llm.mjs";
+import { findMainStoryEpisode, loadMainStoryEpisodes } from "./main-story-modes.mjs";
 
 const __dirname = path.dirname(url.fileURLToPath(import.meta.url));
 const appRoot = path.resolve(__dirname, "..", "..");
@@ -103,6 +104,11 @@ function printUsage() {
 Options:
   --schema <file>        ScenarioScriptDBSchema.json or a group extraction
                          default: BA_SCENARIO_SCHEMA_PATH or ${defaultSchemaPath}
+  --scenario-mode-schema <file>
+                         ScenarioModeDBSchema.json used to merge all scenario
+                         groups that belong to one main-story episode
+  --no-main-episode-merge
+                         import only the requested GroupId (legacy behavior)
   --type <type>          output story type, default: main
   --out-id <id>          output story id, default: source story id
   --directory-id <id>    required for nested output types: favor/event/group/mini
@@ -166,6 +172,8 @@ function parseArgs(argv) {
   const args = {
     storyId: "",
     schema: defaultSchemaPath,
+    scenarioModeSchema: "",
+    mergeMainEpisode: true,
     type: "main",
     outId: "",
     directoryId: "",
@@ -196,6 +204,12 @@ function parseArgs(argv) {
       case "--schema":
       case "--input":
         args.schema = readOptionValue(argv, ++index, arg);
+        break;
+      case "--scenario-mode-schema":
+        args.scenarioModeSchema = readOptionValue(argv, ++index, arg);
+        break;
+      case "--no-main-episode-merge":
+        args.mergeMainEpisode = false;
         break;
       case "--type":
         args.type = readOptionValue(argv, ++index, arg);
@@ -320,10 +334,11 @@ function readJson(filePath, label) {
   }
 }
 
-function decodeRawRows(source, storyId) {
-  const numericStoryId = Number(storyId);
+function decodeRawRows(source, storyIds) {
+  const normalizedStoryIds = [...new Set(storyIds.map(String))];
+  const numericStoryIds = new Set(normalizedStoryIds.map(Number));
   const matchesStoryId = value =>
-    String(value) === storyId || Number(value) === numericStoryId;
+    normalizedStoryIds.includes(String(value)) || numericStoryIds.has(Number(value));
   let candidates;
 
   if (Array.isArray(source)) {
@@ -349,7 +364,7 @@ function decodeRawRows(source, storyId) {
       !matchesStoryId(source.GroupId)
     ) {
       throw new Error(
-        `Group extraction contains GroupId ${source.GroupId}, expected ${storyId}`,
+        `Group extraction contains GroupId ${source.GroupId}, expected one of ${normalizedStoryIds.join(", ")}`,
       );
     }
     candidates = source.content.filter(
@@ -365,10 +380,10 @@ function decodeRawRows(source, storyId) {
   }
 
   if (candidates.length === 0) {
-    throw new Error(`No raw rows found for GroupId ${storyId}`);
+    throw new Error(`No raw rows found for GroupId(s) ${normalizedStoryIds.join(", ")}`);
   }
 
-  return candidates.map((row, index) => {
+  const validated = candidates.map((row, index) => {
     if (!row || typeof row !== "object" || Array.isArray(row)) {
       throw new Error(`Raw row ${index} is not an object`);
     }
@@ -377,11 +392,19 @@ function decodeRawRows(source, storyId) {
       !matchesStoryId(row.GroupId)
     ) {
       throw new Error(
-        `Raw row ${index} contains GroupId ${row.GroupId}, expected ${storyId}`,
+        `Raw row ${index} contains GroupId ${row.GroupId}, expected one of ${normalizedStoryIds.join(", ")}`,
       );
     }
     return row;
   });
+  const rowsByGroupId = new Map(normalizedStoryIds.map(groupId => [groupId, []]));
+  for (const row of validated) {
+    const groupId = String(row.GroupId ?? normalizedStoryIds[0]);
+    rowsByGroupId.get(groupId)?.push(row);
+  }
+  const missing = normalizedStoryIds.filter(groupId => !rowsByGroupId.get(groupId)?.length);
+  if (missing.length) throw new Error(`No raw rows found for GroupId(s) ${missing.join(", ")}`);
+  return normalizedStoryIds.flatMap(groupId => rowsByGroupId.get(groupId));
 }
 
 function asString(value) {
@@ -430,6 +453,9 @@ function convertRawRow(rawRow, storyId) {
 function printSummary(summary) {
   console.log(`Raw source: ${summary.schemaPath}`);
   console.log(`GroupId: ${summary.storyId}`);
+  if (summary.sourceGroupIds.length > 1) {
+    console.log(`Merged scenario GroupIds: ${summary.sourceGroupIds.join(", ")}`);
+  }
   console.log(`Raw rows: ${summary.rawRows}`);
   console.log(`Output: ${summary.outputPath}`);
   if (summary.baL10n) {
@@ -475,31 +501,62 @@ function printSummary(summary) {
   }
 }
 
-async function supplementFromBaL10n(args, content) {
+function mergeSupplementStats(items, viewerRows) {
+  return {
+    sourceRows: items.reduce((sum, item) => sum + item.stats.sourceRows, 0),
+    viewerRows,
+    textRows: items.reduce((sum, item) => sum + item.stats.textRows, 0),
+    matchedRows: items.reduce((sum, item) => sum + item.stats.matchedRows, 0),
+    unmatchedRows: items.flatMap(item => item.stats.unmatchedRows),
+    filled: Object.fromEntries(Object.keys(items[0]?.stats.filled ?? {}).map(field => [
+      field,
+      items.reduce((sum, item) => sum + item.stats.filled[field], 0),
+    ])),
+  };
+}
+
+async function supplementFromBaL10n(args, content, sourceGroupIds) {
   if (!args.useBaL10n) {
     return undefined;
   }
-
-  const cachePath = path.join(
-    defaultBaL10nCacheRoot,
-    args.baL10nSourceKind,
-    `${args.storyId}.json`,
-  );
   const inputPath = args.baL10nInput
     ? resolveInputPath(args.baL10nInput)
     : "";
   try {
-    const source = await loadBaL10nStory({
-      storyId: args.storyId,
-      sourceKind: args.baL10nSourceKind,
-      baseUrl: args.baL10nBaseUrl,
-      cachePath,
-      inputPath,
-      refresh: args.refreshBaL10n,
-    });
+    if (inputPath) {
+      const source = await loadBaL10nStory({
+        storyId: args.storyId,
+        sourceKind: args.baL10nSourceKind,
+        baseUrl: args.baL10nBaseUrl,
+        cachePath: "",
+        inputPath,
+        refresh: args.refreshBaL10n,
+      });
+      return { ...source, stats: supplementMissingTranslations(content, source.rows) };
+    }
+    const sources = [];
+    for (const groupId of sourceGroupIds) {
+      const cachePath = path.join(
+        defaultBaL10nCacheRoot,
+        args.baL10nSourceKind,
+        `${groupId}.json`,
+      );
+      const source = await loadBaL10nStory({
+        storyId: groupId,
+        sourceKind: args.baL10nSourceKind,
+        baseUrl: args.baL10nBaseUrl,
+        cachePath,
+        inputPath: "",
+        refresh: args.refreshBaL10n,
+      });
+      const groupRows = content.filter(row => String(row.GroupId) === String(groupId));
+      sources.push({ ...source, groupId, stats: supplementMissingTranslations(groupRows, source.rows) });
+    }
     return {
-      ...source,
-      stats: supplementMissingTranslations(content, source.rows),
+      source: sources.map(item => item.source).join(", "),
+      sources,
+      fromCache: sources.every(item => item.fromCache),
+      stats: mergeSupplementStats(sources, content.length),
     };
   } catch (error) {
     if (args.requireBaL10n) {
@@ -532,11 +589,20 @@ async function main() {
   }
   const schemaPath = resolveInputPath(args.schema);
   const source = readJson(schemaPath, "raw scenario schema");
-  const rawSourceRows = decodeRawRows(source, args.storyId);
+  let sourceGroupIds = [args.storyId];
+  let mainEpisode = null;
+  let scenarioModePath = "";
+  if (args.type === "main" && args.mergeMainEpisode) {
+    const catalog = loadMainStoryEpisodes(schemaPath, args.scenarioModeSchema);
+    scenarioModePath = catalog.path;
+    mainEpisode = findMainStoryEpisode(catalog.episodes, args.storyId);
+    if (mainEpisode) sourceGroupIds = mainEpisode.groupIds;
+  }
+  const rawSourceRows = decodeRawRows(source, sourceGroupIds);
   const content = rawSourceRows.map(row =>
     convertRawRow(row, args.storyId),
   );
-  const baL10n = await supplementFromBaL10n(args, content);
+  const baL10n = await supplementFromBaL10n(args, content, sourceGroupIds);
   const characterNameMappings = args.workbenchRawImport
     ? new Map()
     : await loadTraditionalToSimplifiedCharacterNameMap();
@@ -597,6 +663,9 @@ async function main() {
   }
   const summary = {
     storyId: args.storyId,
+    sourceGroupIds,
+    mainEpisode,
+    scenarioModePath,
     schemaPath,
     rawRows: content.length,
     outputPath,

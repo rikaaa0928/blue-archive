@@ -467,7 +467,9 @@ async function scanVoiceAvailability(story, { skipVoiced = false } = {}) {
         }
         throw error;
       }
-      const voiceLines = extractVoiceLines(Array.isArray(content.baseData) ? content.baseData : []);
+      const voiceLines = extractVoiceLines(
+        Array.isArray(content?.baseData) ? content.baseData : content,
+      );
       contentSummary = {
         checkedAt: nowIso(),
         voiceLineCount: voiceLines.length,

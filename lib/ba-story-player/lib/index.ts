@@ -31,6 +31,7 @@ import gsap from "gsap";
 import { PixiPlugin } from "gsap/PixiPlugin";
 // Howler 中间件
 import { HowlerLoader } from "@/middlewares/howlerPixiLoader";
+import { findSelectionTargetIndex } from "@/selectionTarget";
 
 extensions.add(HowlerLoader);
 
@@ -1246,8 +1247,10 @@ export const storyHandler = {
       this.storyIndexIncrement();
       return;
     }
-    const index = playerStore.allStoryUnit.findIndex(
-      value => value.SelectionGroup === option
+    const index = findSelectionTargetIndex(
+      playerStore.allStoryUnit,
+      this.currentStoryIndex,
+      option
     );
     if (index === -1) {
       return false;

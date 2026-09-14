@@ -1,7 +1,8 @@
 import { StoryBriefing } from "@/types/StoryJson";
+import generatedStories from "./mainStoryIndex.generated.json";
 
 /* eslint-disable max-len */
-export const stories: StoryBriefing[] = [
+const manualStories: StoryBriefing[] = [
   {
     released: true,
     title: {
@@ -2117,3 +2118,57 @@ export const stories: StoryBriefing[] = [
     ],
   },
 ];
+
+type GeneratedStoryBriefing = StoryBriefing & { _seriesKey?: string };
+
+function inferredSeriesKey(story: StoryBriefing) {
+  const firstId = story.sections[0]?.story_id;
+  if (!firstId) return "";
+  if (firstId >= 11000 && firstId < 11010) return "prologue";
+  return String(firstId).slice(0, 2);
+}
+
+function normalizedSeriesKey(story: GeneratedStoryBriefing) {
+  if (story._seriesKey === "prologue") return "prologue";
+  if (story._seriesKey?.includes(":")) return story._seriesKey.split(":").join("");
+  return inferredSeriesKey(story);
+}
+
+function mergeStoryIndexes(manual: StoryBriefing[], generated: GeneratedStoryBriefing[]) {
+  const byKey = new Map<string, StoryBriefing>();
+  for (const story of manual) byKey.set(normalizedSeriesKey(story), story);
+  for (const generatedStory of generated) {
+    const key = normalizedSeriesKey(generatedStory);
+    const existing = byKey.get(key);
+    if (!existing) {
+      const story = { ...generatedStory };
+      delete story._seriesKey;
+      byKey.set(key, story);
+      continue;
+    }
+    const sections = new Map(existing.sections.map(section => [section.story_id, section]));
+    for (const section of generatedStory.sections) {
+      const manualSection = sections.get(section.story_id);
+      sections.set(section.story_id, manualSection ? {
+        ...section,
+        ...manualSection,
+        title: { ...section.title, ...manualSection.title },
+        abstract: { ...section.abstract, ...manualSection.abstract },
+      } : section);
+    }
+    byKey.set(key, {
+      ...generatedStory,
+      ...existing,
+      title: { ...generatedStory.title, ...existing.title },
+      sections: [...sections.values()].sort((left, right) => left.story_id - right.story_id),
+    });
+  }
+  return [...byKey.entries()]
+    .sort(([left], [right]) => left === "prologue" ? -1 : right === "prologue" ? 1 : Number(left) - Number(right))
+    .map(([, story]) => story);
+}
+
+export const stories: StoryBriefing[] = mergeStoryIndexes(
+  manualStories,
+  generatedStories as GeneratedStoryBriefing[],
+);

@@ -8,6 +8,7 @@ import {
 import { getPlayerCharacterId } from "../../../create-story/ba-character-catalog.mjs";
 import { parseScenarioScriptSpeakers } from "../../../create-story/scenario-script-speakers.mjs";
 import { normalizeCollectiveMemberKeys } from "../../lib/collective-members.mjs";
+import { updateGeneratedMainStoryIndex } from "../../../create-story/generate-main-story-index.mjs";
 
 import {
   applyTtsSkipDecision,
@@ -1060,5 +1061,8 @@ export function materializeProductionStory(identityOrId) {
   const story = readJson(paths.assemblyStory);
   const destination = publicStoryPath(paths.workspace.identity);
   writeJsonAtomic(destination, story);
+  if (paths.workspace.identity.type === "main") {
+    updateGeneratedMainStoryIndex();
+  }
   return getProduction(identityOrId, { includeStory: false });
 }

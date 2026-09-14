@@ -233,9 +233,6 @@ export async function fetchContentJson(contentId) {
   }
 
   const content = typeof contentJson === "string" ? JSON.parse(contentJson) : contentJson;
-  if (Array.isArray(content)) {
-    throw new Error("此角色使用新版 illustrated-book 格式，暂不支持");
-  }
   return content;
 }
 
@@ -297,7 +294,7 @@ function extractFirstSettingImage(baseData) {
   return "";
 }
 
-export function extractVoiceLines(baseData) {
+function extractLegacyVoiceLines(baseData) {
   let voiceStart = baseData.findIndex(
     row => Array.isArray(row) && cellString(row[0]) === "配音语言" && row[0]?.isGlobal,
   );
@@ -357,6 +354,97 @@ export function extractVoiceLines(baseData) {
     });
   }
   return voiceLines;
+}
+
+function richTextParagraphs(value) {
+  const paragraphs = [];
+  const collectText = node => {
+    if (typeof node === "string") return node;
+    if (!node || typeof node !== "object") return "";
+    if (Array.isArray(node)) return node.map(collectText).join("");
+    if (typeof node.text === "string") return node.text;
+    return collectText(node.children);
+  };
+  const visit = node => {
+    if (!node || typeof node !== "object") return;
+    if (Array.isArray(node)) {
+      node.forEach(visit);
+      return;
+    }
+    if (node.type === "paragraph") {
+      const text = collectText(node.children).trim();
+      if (text) paragraphs.push(text);
+      return;
+    }
+    Object.values(node).forEach(visit);
+  };
+  visit(value);
+  return paragraphs;
+}
+
+function illustratedBookAudioSections(content) {
+  const sections = [];
+  const visit = node => {
+    if (!node || typeof node !== "object") return;
+    if (Array.isArray(node)) {
+      node.forEach(visit);
+      return;
+    }
+    if (node.type === "audio-info" && node.data) {
+      sections.push(node.data);
+    }
+    Object.values(node).forEach(visit);
+  };
+  visit(content);
+  return sections;
+}
+
+export function extractIllustratedBookVoiceLines(content) {
+  const voiceLines = [];
+  const seen = new Set();
+  for (const section of illustratedBookAudioSections(content)) {
+    const japaneseTabKeys = new Set(
+      (section.tabs ?? [])
+        .filter(tab => normalizeText(tab.label) === normalizeText("日配"))
+        .map(tab => String(tab.key)),
+    );
+    for (const group of section.list ?? []) {
+      if (!japaneseTabKeys.has(String(group.filterTabKey))) continue;
+      for (const item of group.content ?? []) {
+        const audioJp = String(item?.audio ?? "").trim();
+        const name = richTextParagraphs(item?.name)[0] ?? "";
+        const [textJp = "", textCn = ""] = richTextParagraphs(item?.desc);
+        if (!name || !textJp) continue;
+        const identity = audioJp || `${name}\u0000${textJp}`;
+        if (seen.has(identity)) continue;
+        seen.add(identity);
+        voiceLines.push({
+          category: String(group.title ?? "").trim() || "未分类",
+          name,
+          textJp,
+          textCn,
+          textCnDub: "",
+          audioJp,
+          audioCn: "",
+          audioKr: "",
+        });
+      }
+    }
+  }
+  return voiceLines;
+}
+
+export function extractVoiceLines(contentOrBaseData) {
+  const illustratedBookLines = extractIllustratedBookVoiceLines(contentOrBaseData);
+  if (illustratedBookLines.length || illustratedBookAudioSections(contentOrBaseData).length) {
+    return illustratedBookLines;
+  }
+  const baseData = Array.isArray(contentOrBaseData?.baseData)
+    ? contentOrBaseData.baseData
+    : contentOrBaseData;
+  return extractLegacyVoiceLines(
+    Array.isArray(baseData) ? baseData : [],
+  );
 }
 
 function sanitizeFilename(value) {
@@ -448,7 +536,7 @@ export async function downloadCharacter(name, outputBase, { referencesOnly = fal
   }
 
   console.log("[6/6] 下载语音和台词...");
-  const voiceLines = extractVoiceLines(baseData);
+  const voiceLines = extractVoiceLines(content);
   const voiceDir = path.join(outputDir, "语音");
   fs.mkdirSync(voiceDir, { recursive: true });
   const nameCounts = new Map();

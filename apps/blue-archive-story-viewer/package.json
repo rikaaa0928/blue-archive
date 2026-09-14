@@ -19,6 +19,7 @@
     "verify-cn-proofread-diff": "node ./tools/create-story/verify-cn-proofread-diff.mjs",
     "find-event-story": "node ./tools/create-story/find-event-story.mjs",
     "generate-event-story-index": "node ./tools/create-story/generate-event-story-index.mjs",
+    "generate-main-story-index": "node ./tools/create-story/generate-main-story-index.mjs",
     "set-recording-selections": "node ./tools/create-story/preselect-options.mjs",
     "validate-recording-selections": "node ./tools/create-story/validate-recording-selections.mjs",
     "enrich-story-llm": "node ./tools/create-story/enrich-story-with-llm.mjs",

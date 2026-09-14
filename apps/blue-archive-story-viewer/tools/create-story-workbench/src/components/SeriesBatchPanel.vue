@@ -45,7 +45,7 @@
             :class="['series-chapter', { selected: selectedIds.has(chapter.storyId) }]"
           >
             <b>{{ String(chapter.order).padStart(2, '0') }}</b>
-            <div><strong>{{ text(chapter.title) }}</strong><small>{{ chapter.storyId }}</small></div>
+            <div><strong>{{ text(chapter.title) }}</strong><small>{{ chapter.storyId }}<template v-if="chapter.sourceGroupIds?.length > 1"> · 合并 {{ chapter.sourceGroupIds.join(' + ') }}</template></small></div>
             <span :class="['badge', chapter.progress.code]">{{ chapter.progress.label }}</span>
           </div>
         </div>

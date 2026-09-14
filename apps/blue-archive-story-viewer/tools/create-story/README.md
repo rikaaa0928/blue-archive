@@ -86,6 +86,8 @@ Gemini 封面工具的创意规则、操作和产物说明见
 - `voice-zero-tts.mjs`：准备参考音与增量生成语音；不会代替资源下载。
 - `publish-voice-r2.mjs`：上传已有语音并回填剧情所需 URL，不发布视频。
 - `generate-event-story-index.mjs`：更新活动剧情索引。
+- `generate-main-story-index.mjs`：根据 `ScenarioModeDBSchema.json` 和已经生成的正式主线 JSON
+  更新页面使用的主线增量索引。
 - `preselect-options.mjs`、`validate-recording-selections.mjs`：写入与校验录制默认分支。
 - `generate-series-covers.mjs`：通读所选活动章节的日文原文，规划整组封面风格轮换并按顺序调度生成。
 - `generate-story-cover.mjs`：单章分析、参考图生图和视觉复检；由系列工具调用，也可独立调试。

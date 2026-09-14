@@ -21,6 +21,7 @@ const defaultImage =
   "ba-asset-downloader:v2.3.0";
 const requiredTableFiles = [
   "ScenarioScriptDBSchema.json",
+  "ScenarioModeDBSchema.json",
   "EventContentScenarioDBSchema.json",
   "EventContentSeasonDBSchema.json",
   "LocalizeDBSchema.json",
@@ -68,7 +69,7 @@ Options:
   --skip-download      reuse an existing raw/Table/ExcelDB.db
   --help, -h           show this help
 
-The command downloads only ExcelDB.db and exports only the six JSON tables
+The command downloads only ExcelDB.db and exports only the seven JSON tables
 required by story import, event lookup and character resolution. It never downloads the full Table
 catalog payload.
 `);

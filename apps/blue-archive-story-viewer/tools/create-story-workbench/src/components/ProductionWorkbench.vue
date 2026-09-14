@@ -104,7 +104,8 @@
           <div class="stage-heading"><div><p class="eyebrow">SPEAKERS & REFERENCES</p><h2>说话人与参考音</h2></div><span :class="['badge', production.voice.speakers.ready ? 'completed' : 'ready']">{{ speakerStateLabel }}</span></div>
           <p class="stage-description">角色信息库可唯一匹配且有日语语音时自动确认。这里仅列出未知、团体、NPC、无语音或多候选等例外。</p>
           <button v-if="!production.voice.speakers.scannedAt" class="primary" :disabled="busy" @click="run('production-speaker-scan')">自动识别说话人</button>
-          <div v-else class="speaker-review-layout">
+          <button v-else class="ghost small" :disabled="busy" @click="rescanSpeakers">重新扫描说话人</button>
+          <div v-if="production.voice.speakers.scannedAt" class="speaker-review-layout">
             <div class="speaker-exceptions">
               <details v-if="storyCharacterNameReferences.length" class="story-character-reference" open>
                 <summary>当前剧情角色名参考（{{ storyCharacterNameReferences.length }}）</summary>
@@ -285,11 +286,12 @@
             <p class="muted">发现问题时直接返回简中字幕、配音稿或参考音微调；重新装配后当前视频和确认状态会自动过期。</p>
           </section>
         </div>
-        <div v-if="production.preview.complete" class="publish-warning"><b>预览视频已确认</b><p>现在可以把同一份装配写入播放器使用的正式剧情目录；不会再次录制视频。</p><button class="primary" @click="materializeStory">生成正式剧情文件</button><span v-if="production.publicArtifact.current" class="completed-copy">✓ 正式文件与当前装配一致</span></div>
+        <div v-if="production.preview.complete" class="publish-warning"><b>预览视频已确认</b><p>现在可以把同一份装配写入播放器使用的正式剧情目录；主线会同时更新页面索引，不会再次录制视频。</p><button class="primary" @click="materializeStory">生成正式剧情文件</button><span v-if="production.publicArtifact.current" class="completed-copy">✓ 正式文件与当前装配一致</span></div>
         <section v-if="production.publicArtifact.current" class="post-production">
           <div class="section-title"><div><p class="eyebrow">POST PRODUCTION</p><h2>录制与收尾</h2></div><small>每一步都有独立产物判定</small></div>
           <article><b>01</b><div><strong>正式剧情 JSON</strong><small>当前装配已经写入 public/story</small></div><span class="badge completed">已完成</span></article>
           <article v-if="isEventStory"><b>02</b><div><strong>活动索引</strong><small>同一活动未完成全部章节时也可重复更新</small></div><span :class="['badge', production.eventIndex.current ? 'completed' : 'ready']">{{ production.eventIndex.current ? '已更新' : '待执行' }}</span><button class="ghost" :disabled="busy" @click="run('production-event-index')">更新活动索引</button></article>
+          <article v-if="isMainStory"><b>02</b><div><strong>主线索引</strong><small>正式文件生成时已自动合并到页面增量索引</small></div><span class="badge completed">已更新</span></article>
           <article><b>03</b><div><strong>录制默认分支</strong><small>来自上方最终分支确认，录制前由原子脚本写入并再次校验</small></div><span class="badge completed">已确认</span></article>
           <article><b>04</b><div><strong>简中视频</strong><small>最终预览使用的视频即为正式录制产物</small></div><span class="badge completed">已录制并确认</span></article>
           <article><b>05</b><div><strong>视频产物验收</strong><small>ffprobe 元数据检查与 FFmpeg 全量解码</small><template v-if="production.recording.current"><code>{{ production.recording.output }}</code></template></div><span :class="['badge', production.recording.current ? 'completed' : 'locked']">{{ production.recording.current ? '验收通过' : '等待录制' }}</span></article>
@@ -341,6 +343,7 @@ async function loadTtsLines() { const payload = await api("/tts/lines"); ttsLine
 async function loadSpeakerContextStory() { if (speakerContextStory.value) return; speakerContextStory.value = (await api("/context-story")).story; }
 function syncDrafts() { if (!production.value) return; cnDraft.value = Object.fromEntries(production.value.story.map(row => [row.index, row.TextCn])); scriptDraft.value = Object.fromEntries(production.value.story.map(row => [row.index, row.TextJpVoice])); speakerDraft.value = Object.fromEntries(production.value.voice.speakers.items.map(item => [item.stableKey, { type: item.resolution?.type || (item.reason === "collective-speaker" ? "collective" : "character"), stableKey: item.resolution?.stableKey || "", characterName: item.resolution?.characterName || "", membersText: (item.resolution?.members || []).join(", ") }])); const first = humanSpeakers.value[0]; if (first && !activeSpeakerKey.value) { activeSpeakerKey.value = first.stableKey; activeSpeakerIndex.value = speakerIndices(first)[0] ?? null; speakerOccurrenceSelection.value[first.stableKey] = activeSpeakerIndex.value; } }
 function run(action, params = {}) { emit("run", action, params); }
+function rescanSpeakers() { if (!window.confirm("重新扫描会覆盖当前人工说话人判断；不会自动重跑参考音或 TTS。确认继续？")) return; run("production-speaker-scan"); }
 function persistModel(target, storageKey, defaultModel = "gemini-3.7-flash") { if (!target.value) target.value = defaultModel; localStorage.setItem(storageKey, target.value); return target.value; }
 async function mutate(suffix, method, body) { try { await api(suffix, { method, body: JSON.stringify(body) }); await load(); emit("changed"); } catch (cause) { emit("error", cause); } }
 function generateCn() { const model = persistModel(cnModel, "story-workbench-cn-llm-model", "gemini-3.1-pro-preview"); run("production-cn-generate", { model, guidance: cnGuidance.value, refreshCache: Boolean(production.value.cn.generationCount) }); }
@@ -402,6 +405,7 @@ const voicePrerequisitesReady = computed(() => production.value?.voice.speakers.
 const voiceStateLabel = computed(() => voicePrerequisitesReady.value ? "前置任务已完成" : [speakerStateLabel.value, scriptStateLabel.value].join(" · "));
 const assemblyReady = computed(() => production.value?.cn.ready && voicePrerequisitesReady.value && production.value?.voice.tts.voiceStoryReady);
 const isEventStory = computed(() => props.status?.workspace?.identity?.type === "event");
+const isMainStory = computed(() => props.status?.workspace?.identity?.type === "main");
 function shortDigest(value) { return String(value || "").replace("sha256:", "").slice(0, 10); } function formatTime(value) { return value ? new Date(value).toLocaleString("zh-CN", { hour12: false }) : ""; }
 
 watch(() => props.workspaceId, () => { speakerContextStory.value = null; speakerPlayerReady.value = false; pendingSpeakerIndex.value = null; locatedSpeakerIndex.value = null; activeSpeakerKey.value = ""; selectedCnRunId.value = ""; selectedCnRun.value = null; selectedScriptRunId.value = ""; selectedScriptRun.value = null; load(); }); watch(() => props.section, next => { if (next !== "production-voice") { speakerPlayerReady.value = false; locatedSpeakerIndex.value = null; return; } if (production.value?.voice.speakers.scannedAt) loadSpeakerContextStory().catch(cause => emit("error", cause)); }); watch(() => props.latestJob?.status, (next, previous) => { if (next && next !== "running" && previous === "running") load(); });

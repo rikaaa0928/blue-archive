@@ -104,6 +104,7 @@ ba-downloader extract --region gl --resource-type table --search ExcelDB
 
 ```text
 ScenarioScriptDBSchema.json
+ScenarioModeDBSchema.json
 EventContentScenarioDBSchema.json
 EventContentSeasonDBSchema.json
 LocalizeDBSchema.json
@@ -111,8 +112,8 @@ LocalizeEtcDBSchema.json
 ScenarioCharacterNameDBSchema.json
 ```
 
-它们分别提供完整剧情帧、活动与 GroupId 关系、活动/复刻元数据、常规本地化文本
-、补充本地化文本和角色脚本哈希/多语言显示名。剧情导入、活动查询及角色解析
+它们分别提供完整剧情帧、主线章节与前后剧情分组、活动与 GroupId 关系、活动/复刻元数据、
+常规本地化文本、补充本地化文本和角色脚本哈希/多语言显示名。剧情导入、活动查询及角色解析
 不需要其余 ExcelDB 表。
 
 每张 JSON 先写入 `.json.tmp`，完成后再原子替换正式文件，避免中断时留下半个
@@ -134,7 +135,7 @@ extracted/FlatBufferData/
 extracted/MemoryPackData/
 ```
 
-因此通常只需更新 ExcelDB 并重新导出六张表。`--skip-download` 完全跳过 catalog
+因此通常只需更新 ExcelDB 并重新导出七张表。`--skip-download` 完全跳过 catalog
 资源下载，但 SQLCipher key 获取和必要的 schema 准备仍可能联网。
 `temp/SQLCipher/` 是本次运行生成的明文临时数据库位置，不视为跨运行缓存。
 
@@ -152,7 +153,7 @@ extracted/MemoryPackData/
 | 文件 | 作用 |
 | --- | --- |
 | `Dockerfile` | 构建固定上游版本和运行环境，并把精准提取工具装入镜像 |
-| `extract-story-tables.py` | 复用上游内部接口，只导出六张剧情相关表 |
+| `extract-story-tables.py` | 复用上游内部接口，只导出七张剧情相关表 |
 | `../sync-ba-story-data.mjs` | 宿主机入口，编排精准下载、容器提取和产物检查 |
 
 ## 上游升级注意事项
@@ -163,7 +164,7 @@ extracted/MemoryPackData/
 1. `AppSettings` 和 region profile 构造仍兼容；
 2. `TableExtractor.from_context()` 与 `process_db_file(table_name=...)` 仍存在；
 3. GL SQLCipher resolver 仍由 table profile 注入；
-4. 六张 JSON 均可完整解析；
+4. 七张 JSON 均可完整解析；
 5. `find-event-story` 名称查询、活动 ID 查询和 GroupId 反查正常；
 6. `import-ba-raw-story --dry-run` 能读取新 `ScenarioScriptDBSchema.json`。
 

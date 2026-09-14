@@ -20,6 +20,7 @@ from ba_downloader.infrastructure.storage import TableDatabase
 
 DEFAULT_TABLES = (
     "ScenarioScriptDBSchema",
+    "ScenarioModeDBSchema",
     "EventContentScenarioDBSchema",
     "EventContentSeasonDBSchema",
     "LocalizeDBSchema",

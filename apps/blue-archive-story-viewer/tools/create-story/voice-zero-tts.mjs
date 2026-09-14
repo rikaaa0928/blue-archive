@@ -780,12 +780,13 @@ function slugify(value) {
     .slice(0, 80);
 }
 
-function scanVoiceCandidates(characterDir, args) {
+function scanVoiceCandidates(characterDir, args, manualSelectedNames = []) {
   const voiceDir = path.join(characterDir, "语音");
   if (!fs.existsSync(voiceDir)) {
     return [];
   }
 
+  const manualSelections = new Set(manualSelectedNames.map(String));
   const candidates = [];
   for (const entry of fs.readdirSync(voiceDir)) {
     const ext = path.extname(entry).toLowerCase();
@@ -800,7 +801,11 @@ function scanVoiceCandidates(characterDir, args) {
     if (!text) continue;
 
     const duration = getAudioDuration(audioPath);
-    if (duration < args.referenceMinClip) continue;
+    if (duration <= 0) continue;
+    if (
+      duration < args.referenceMinClip &&
+      !manualSelections.has(baseName)
+    ) continue;
 
     candidates.push({
       baseName,
@@ -842,7 +847,7 @@ function manualReferenceSelection(args, speaker) {
   return [];
 }
 
-function selectReferenceClips(candidates, args, speaker) {
+export function selectReferenceClips(candidates, args, speaker) {
   const selectedNames = manualReferenceSelection(args, speaker);
   if (selectedNames.length > 0) {
     const byName = new Map(candidates.map(candidate => [candidate.baseName, candidate]));
@@ -850,6 +855,27 @@ function selectReferenceClips(candidates, args, speaker) {
     const missing = selectedNames.filter((name, index) => !selected[index]);
     if (missing.length) {
       throw new Error(`Manual reference clips not found for ${speaker}: ${missing.join(", ")}`);
+    }
+    const totalDuration = selected.reduce(
+      (sum, candidate) => sum + candidate.duration,
+      0,
+    );
+    const shortClips = selected.filter(
+      candidate => candidate.duration < args.referenceMinClip,
+    );
+    if (
+      shortClips.length > 0 ||
+      totalDuration < args.referenceMin ||
+      totalDuration > args.referenceMax
+    ) {
+      console.warn(
+        `[警告] ${speaker} 使用人工选择的 ${selected.length} 个参考片段` +
+          `（${totalDuration.toFixed(3)}s）` +
+          (shortClips.length > 0
+            ? `，其中 ${shortClips.length} 个短于建议的 ${args.referenceMinClip}s`
+            : "") +
+          "；按人工选择继续。",
+      );
     }
     return selected;
   }
@@ -879,9 +905,13 @@ function selectReferenceClips(candidates, args, speaker) {
   }
 
   if (totalDuration < args.referenceMin && candidates.length > 0) {
-    throw new Error(
-      `Unable to select reference clips >= ${args.referenceMin}s without ` +
-        `exceeding ${args.referenceMax}s`
+    if (selected.length === 0) {
+      selected.push(candidates[0]);
+      totalDuration = candidates[0].duration;
+    }
+    console.warn(
+      `[警告] ${speaker} 的可用参考音共 ${totalDuration.toFixed(3)}s，` +
+        `未达到建议的 ${args.referenceMin}s；将使用 ${selected.length} 个最佳片段继续。`,
     );
   }
 
@@ -961,7 +991,12 @@ function prepareReferenceAudio({ args, speaker, characterName, manifest }) {
     );
   }
 
-  const candidates = scanVoiceCandidates(characterDir, args);
+  const manualSelection = manualReferenceSelection(args, speaker);
+  const candidates = scanVoiceCandidates(
+    characterDir,
+    args,
+    manualSelection,
+  );
   const clips = selectReferenceClips(candidates, args, speaker);
   const referenceText = clips.map(clip => clip.text).join("\n\n");
 
@@ -1935,7 +1970,12 @@ async function main() {
   }
 }
 
-main().catch(error => {
-  console.error(error.message);
-  process.exit(1);
-});
+const invokedPath = process.argv[1]
+  ? url.pathToFileURL(path.resolve(process.argv[1])).href
+  : "";
+if (import.meta.url === invokedPath) {
+  main().catch(error => {
+    console.error(error.message);
+    process.exit(1);
+  });
+}

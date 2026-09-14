@@ -59,6 +59,7 @@ const revisionStages = new Set([
 
 const requiredTableFiles = [
   "ScenarioScriptDBSchema.json",
+  "ScenarioModeDBSchema.json",
   "EventContentScenarioDBSchema.json",
   "EventContentSeasonDBSchema.json",
   "LocalizeDBSchema.json",

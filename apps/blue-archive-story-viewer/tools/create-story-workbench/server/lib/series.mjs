@@ -2,7 +2,8 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { findEventStories } from "../../../create-story/find-event-story.mjs";
-import { localFilesRoot, publicStoryPath, readJson } from "./utils.mjs";
+import { loadMainStoryEpisodes } from "../../../create-story/main-story-modes.mjs";
+import { loadEnvFiles, localFilesRoot, publicStoryPath, readJson } from "./utils.mjs";
 import { getProduction, hasProduction, productionPaths } from "./production.mjs";
 import { listWorkspaces } from "./workspaces.mjs";
 import { applyContinuationTitles, extractStoryTitle } from "./chapter-titles.mjs";
@@ -130,20 +131,36 @@ export function resolveEventSeries(query) {
   };
 }
 
-export function resolveMainSeries(query = "all") {
+export function resolveMainSeries(query = "all", options = {}) {
   const normalizedQuery = String(query ?? "").trim().toLowerCase();
   if (normalizedQuery && !new Set(["all", "main", "全部", "主线"]).has(normalizedQuery) &&
       !/^\d+$/u.test(normalizedQuery)) {
     throw new Error("主线筛选必须是 all、main 或 StoryId 数字前缀");
   }
   const mainRoot = path.dirname(publicStoryPath({ type: "main", storyId: "0" }));
-  const storyIds = fs.existsSync(mainRoot)
+  const publicStoryIds = fs.existsSync(mainRoot)
     ? fs.readdirSync(mainRoot)
       .filter(name => /^\d+\.json$/u.test(name))
       .map(name => name.replace(/\.json$/u, ""))
-      .filter(storyId => !/^\d+$/u.test(normalizedQuery) || storyId.startsWith(normalizedQuery))
-      .sort((left, right) => Number(left) - Number(right))
     : [];
+  loadEnvFiles();
+  const scenarioScriptPath = options.scenarioScriptPath || process.env.BA_SCENARIO_SCHEMA_PATH ||
+    "/Volumes/storage/ba-asset-data-global/extracted/Table/ExcelDB/ScenarioScriptDBSchema.json";
+  const { episodes } = loadMainStoryEpisodes(
+    scenarioScriptPath,
+    options.scenarioModePath || process.env.BA_SCENARIO_MODE_SCHEMA_PATH || "",
+  );
+  const episodeByStoryId = new Map(episodes.map(episode => [episode.storyId, episode]));
+  const storyIds = [...new Set([...episodes.map(episode => episode.storyId), ...publicStoryIds])]
+    .filter(storyId => !/^\d+$/u.test(normalizedQuery) || storyId.startsWith(normalizedQuery))
+    .sort((left, right) => {
+      const leftEpisode = episodeByStoryId.get(left);
+      const rightEpisode = episodeByStoryId.get(right);
+      if (leftEpisode && rightEpisode) return episodes.indexOf(leftEpisode) - episodes.indexOf(rightEpisode);
+      if (leftEpisode) return -1;
+      if (rightEpisode) return 1;
+      return Number(left) - Number(right);
+    });
   if (!storyIds.length) throw new Error(`没有找到匹配的主线剧情：${query}`);
   const workspaceByStoryId = new Map(listWorkspaces()
     .filter(item => !item.corrupt && item.identity?.type === "main")
@@ -156,15 +173,26 @@ export function resolveMainSeries(query = "all") {
       : "全部主线剧情" },
     chapters: storyIds.map((storyId, index) => {
       const workspace = workspaceByStoryId.get(storyId);
+      const episode = episodeByStoryId.get(storyId);
       return {
         order: index + 1,
         storyId,
         directoryId: "",
         title: {
           ...localStoryTitle(workspace, { type: "main", storyId }),
-          fallback: `主线 ${storyId}`,
+          fallback: episode
+            ? episode.modeType === "Prologue"
+              ? `序章 第 ${episode.episodeId} 话`
+              : `Vol.${episode.volumeId} 第 ${episode.chapterId} 章 · 第 ${episode.episodeId} 话`
+            : `主线 ${storyId}`,
         },
-        progress: workspaceProgress(workspace),
+        sourceGroupIds: episode?.groupIds ?? [storyId],
+        imported: publicStoryIds.includes(storyId),
+        progress: workspace
+          ? workspaceProgress(workspace)
+          : publicStoryIds.includes(storyId)
+            ? workspaceProgress(null)
+            : { code: "not-imported", label: "尚未导入", latestStage: null },
       };
     }),
   };

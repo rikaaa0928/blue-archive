@@ -17,6 +17,7 @@ pnpm -C lib/ba-story-player build
 
 ```dotenv
 BA_SCENARIO_SCHEMA_PATH=/path/to/ScenarioScriptDBSchema.json
+BA_SCENARIO_MODE_SCHEMA_PATH=/path/to/ScenarioModeDBSchema.json
 GOOGLE_CLOUD_PROJECT=your-project
 GOOGLE_CLOUD_LOCATION=us-central1
 ZERO_TTS_API_KEY=...
