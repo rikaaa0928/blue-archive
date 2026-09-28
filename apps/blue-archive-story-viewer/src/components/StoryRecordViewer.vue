@@ -8,6 +8,7 @@
       :width="playerWidth"
       :height="playerHeight"
       data-url="https://yuuka.cdn.diyigemt.com/image/ba-all-data"
+      :local-resource-url="localResourceUrl"
       :language="playerLanguage"
       :userName="userName"
       :story-summary="summary"
@@ -42,6 +43,10 @@ const route = useRoute();
 const storyId = computed(() => route.params.id as string);
 const storyQueryType = computed<QueryType>(() => route.params.type as QueryType);
 const waitForCapture = route.query.captureHandshake === "1";
+const localResourceUrl = new URL(
+  `${import.meta.env.BASE_URL}resources/`,
+  window.location.origin
+).toString();
 
 const story = ref<StoryContent>({} as StoryContent);
 const storySummaryRaw = ref<Section | undefined>();

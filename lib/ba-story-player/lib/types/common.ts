@@ -93,6 +93,14 @@ export type Effect =
     }
   | {
       type: "bgshake";
+    }
+  | {
+      type: "battle";
+      /** Black-screen duration in milliseconds. */
+      args: number;
+    }
+  | {
+      type: "battleEnd";
     };
 export interface Option {
   SelectionGroup: number;
@@ -113,6 +121,7 @@ export type PlayerConfigs = PlayerProps & { height: number };
 export type PlayerProps = {
   story: TranslatedStoryUnit;
   dataUrl: string;
+  localResourceUrl?: string;
   width: number;
   height: number;
   language: Language;
@@ -183,6 +192,7 @@ export interface StoryUnit {
   };
   l2d?: {
     spineUrl: string;
+    fallbackSpineUrl?: string;
     animationName: string;
   };
   effect: PlayEffect;

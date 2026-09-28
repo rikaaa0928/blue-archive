@@ -82,6 +82,14 @@ export function effectInit() {
             );
           }
           break;
+        case "battle":
+          eventBus.emit("hideDialog");
+          showBattleTransition();
+          promiseArray.push(wait(effect.args));
+          break;
+        case "battleEnd":
+          promiseArray.push(removeBattleTransitionAfterPaint());
+          break;
         default:
           break;
       }
@@ -102,8 +110,41 @@ export function effectInit() {
 
 export async function removeEffect() {
   await removeBGEffect();
+  removeBattleTransition();
   const { bgInstance } = usePlayerStore();
   zmcPlayer.removeZmc(bgInstance);
+}
+
+const battleTransitionId = "player__battle-transition";
+
+function showBattleTransition() {
+  removeBattleTransition();
+  const playerMain = document.querySelector("#player__main");
+  if (!playerMain) return;
+  const cover = document.createElement("div");
+  cover.id = battleTransitionId;
+  Object.assign(cover.style, {
+    position: "absolute",
+    inset: "0",
+    background: "#000",
+    zIndex: "10000",
+    pointerEvents: "none",
+  });
+  playerMain.appendChild(cover);
+}
+
+function removeBattleTransition() {
+  document.getElementById(battleTransitionId)?.remove();
+}
+
+async function removeBattleTransitionAfterPaint() {
+  // The battle-end tag shares a unit with the first post-battle scene. Keep
+  // the cover until that unit's background, characters, and dialog state have
+  // reached the DOM; otherwise the final pre-battle frame flashes briefly.
+  await new Promise<void>(resolve => {
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+  });
+  removeBattleTransition();
 }
 
 /**

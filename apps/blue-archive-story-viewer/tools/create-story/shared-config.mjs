@@ -6,6 +6,17 @@ export const anonymousNpcPresetVoice = Object.freeze({
   providerSyncStatus: "SYNCED",
 });
 
+export function replaceStoryUsername(value) {
+  return String(value ?? "").replaceAll("[USERNAME]", "エロマンガ");
+}
+
+export function effectiveStoryTtsText(unit) {
+  const raw = unit?.TextJpVoice !== undefined && unit?.TextJpVoice !== null
+    ? String(unit.TextJpVoice).trim()
+    : String(unit?.TextJp ?? "").trim();
+  return replaceStoryUsername(raw);
+}
+
 export function normalizeTextJpVoice(value) {
   let text = String(value ?? "");
   let previous;
@@ -17,7 +28,7 @@ export function normalizeTextJpVoice(value) {
     text = text.replace(/\([^()]*\)|（[^（）]*）/gu, "");
   } while (text !== previous);
 
-  return text
+  return replaceStoryUsername(text)
     .replace(/[ \t]+(?=\n|$)/gu, "")
     .replace(/[ \t]{2,}/gu, " ")
     .trim();

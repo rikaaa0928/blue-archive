@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   buildPlayerFamilyNameMap,
   buildTraditionalToSimplifiedCharacterNameMap,
+  buildTraditionalToSimplifiedProperNounMap,
 } from "./ba-character-catalog.mjs";
 import {
   convertTextTwToTextCnWithMappedNames,
@@ -24,6 +25,40 @@ test("protects mapped names while OpenCC converts surrounding text", () => {
       mappings,
     ),
     "专名甲和千纱在学园里等待。",
+  );
+});
+
+test("builds traceable school and world-term mappings", () => {
+  const mappings = buildTraditionalToSimplifiedProperNounMap({
+    entries: [
+      {
+        traditional: ["奇普托斯"],
+        simplified: "基沃托斯",
+      },
+      {
+        traditional: ["三一綜合學園", "聖三一綜合學園"],
+        simplified: "圣三一综合学园",
+      },
+    ],
+  });
+
+  assert.equal(mappings.get("奇普托斯"), "基沃托斯");
+  assert.equal(mappings.get("三一綜合學園"), "圣三一综合学园");
+  assert.equal(mappings.get("聖三一綜合學園"), "圣三一综合学园");
+});
+
+test("protects school and world terms while OpenCC converts prose", () => {
+  const mappings = new Map([
+    ["奇普托斯", "基沃托斯"],
+    ["三一綜合學園", "圣三一综合学园"],
+  ]);
+
+  assert.equal(
+    convertTextTwToTextCnWithMappedNames(
+      "三一綜合學園位於奇普托斯。",
+      mappings,
+    ),
+    "圣三一综合学园位于基沃托斯。",
   );
 });
 
@@ -120,6 +155,34 @@ test("normalizes names in an existing curated simplified translation", () => {
       new Map([["千紗", "和纱"]]),
     ),
     "终于找到杏山和纱了！",
+  );
+});
+
+test("normalizes school and world terms in existing simplified text", () => {
+  assert.equal(
+    normalizeTextCnCharacterNames(
+      "三一综合学园位于奇普托斯。",
+      "三一綜合學園位於奇普托斯。",
+      new Map([
+        ["奇普托斯", "基沃托斯"],
+        ["三一綜合學園", "圣三一综合学园"],
+      ]),
+    ),
+    "圣三一综合学园位于基沃托斯。",
+  );
+});
+
+test("keeps an already canonical term when it contains the source term", () => {
+  assert.equal(
+    normalizeTextCnCharacterNames(
+      "圣三一综合学园位于基沃托斯。",
+      "三一綜合學園位於奇普托斯。",
+      new Map([
+        ["奇普托斯", "基沃托斯"],
+        ["三一綜合學園", "圣三一综合学园"],
+      ]),
+    ),
+    "圣三一综合学园位于基沃托斯。",
   );
 });
 

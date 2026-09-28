@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import test from "node:test";
 
-import { manifestProvesCurrentAudioPublished } from "./r2-publication-state.mjs";
+import {
+  manifestProvesCurrentAudioPublished,
+  publicationTextMatchesTask,
+} from "./r2-publication-state.mjs";
 
 function hash(text) {
   return crypto.createHash("sha256").update(text).digest("hex");
@@ -53,4 +56,15 @@ test("supports collective audio publication identity", () => {
     publishedText: "みんな！",
     needsPublish: false,
   }), true);
+});
+
+test("matches published TTS text after replacing the story username placeholder", () => {
+  assert.equal(publicationTextMatchesTask(
+    { TextJpVoice: "[surprised][USERNAME]先生？" },
+    { generatedText: "[surprised]エロマンガ先生？" },
+  ), true);
+  assert.equal(publicationTextMatchesTask(
+    { TextJpVoice: "[surprised][USERNAME]先生？" },
+    { generatedText: "[surprised]アロナ先生？" },
+  ), false);
 });

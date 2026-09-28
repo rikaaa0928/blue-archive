@@ -1,5 +1,7 @@
 import crypto from "node:crypto";
 
+import { effectiveStoryTtsText } from "./shared-config.mjs";
+
 function textHash(text) {
   return crypto.createHash("sha256").update(String(text)).digest("hex");
 }
@@ -29,3 +31,8 @@ export function manifestProvesCurrentAudioPublished(task) {
   return false;
 }
 
+export function publicationTextMatchesTask(unit, task) {
+  const currentVoiceText = effectiveStoryTtsText(unit);
+  const generatedText = String(task?.generatedText ?? task?.text ?? "").trim();
+  return Boolean(currentVoiceText) && generatedText === currentVoiceText;
+}

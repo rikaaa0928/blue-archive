@@ -4,6 +4,7 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 
 import { build as buildFrontend } from "vite";
+import { ensureLocalSpineResources } from "../../ensure-local-spine-resources.mjs";
 
 import { getJob, listJobs, listRunningJobs, startJob } from "./lib/jobs.mjs";
 import { prerequisiteStageForJob } from "./lib/job-policy.mjs";
@@ -36,6 +37,7 @@ import {
   setVoiceScriptSkip,
   updateProductionBranches,
   updateSpeakerResolution,
+  updateSpeakerResolutions,
   writeReferenceArtifact,
 } from "./lib/production.mjs";
 import { approveReview, openReview, reviewSummary, updateReview } from "./lib/reviews.mjs";
@@ -63,6 +65,7 @@ import {
 } from "./lib/workspaces.mjs";
 
 loadEnvFiles();
+await ensureLocalSpineResources();
 
 const host = "127.0.0.1";
 const port = Number(process.env.STORY_WORKBENCH_PORT || 4178);
@@ -204,6 +207,53 @@ async function handleApi(request, response, parsedUrl) {
   if (request.method === "GET" && pathname === "/api/series/main") {
     const query = parsedUrl.searchParams.get("query") || "all";
     sendJson(response, 200, { series: resolveMainSeries(query) });
+    return true;
+  }
+  if (request.method === "POST" && pathname === "/api/series/versions") {
+    const body = await readBody(request);
+    if (body.confirmed !== true) {
+      sendJson(response, 409, {
+        error: "confirmation-required",
+        message: "批量新增版本会把所选章节切换到全新的生产版本，请先确认。",
+      });
+      return true;
+    }
+    const seriesType = String(body.seriesType || "");
+    if (!new Set(["main", "event"]).has(seriesType)) throw new Error("批量新增版本仅支持主线或活动系列");
+    const series = seriesType === "main"
+      ? resolveMainSeries(body.query || "all")
+      : resolveEventSeries(body.query);
+    const chapterById = new Map(series.chapters.map(chapter => [chapter.storyId, chapter]));
+    const requestedIds = [...new Set((body.storyIds ?? []).map(value => String(value)))];
+    if (!requestedIds.length || requestedIds.some(storyId => !chapterById.has(storyId))) {
+      throw new Error("只能给当前系列范围内的章节批量新增版本");
+    }
+    const workspaceIdFor = chapter => `${seriesType}:${chapter.directoryId || "_"}:${chapter.storyId}`;
+    const requestedWorkspaceIds = new Set(requestedIds.map(storyId => workspaceIdFor(chapterById.get(storyId))));
+    const runningWorkspaceIds = new Set(runningTaskSnapshot().jobs.map(job =>
+      `${job.workspaceIdentity.type}:${job.workspaceIdentity.directoryId || "_"}:${job.workspaceIdentity.storyId}`));
+    for (const batch of listRunningBatches()) {
+      if (batch.series?.type !== seriesType) continue;
+      for (const item of batch.items ?? []) {
+        runningWorkspaceIds.add(`${seriesType}:${item.directoryId || "_"}:${item.storyId}`);
+      }
+    }
+    const blocked = [...requestedWorkspaceIds].filter(id => runningWorkspaceIds.has(id));
+    if (blocked.length) throw new Error(`以下章节仍有任务或批次正在运行：${blocked.join("、")}`);
+    const created = requestedIds.map(storyId => {
+      const chapter = chapterById.get(storyId);
+      const identity = { type: seriesType, storyId, directoryId: chapter.directoryId || "" };
+      const workspace = chapter.workspaceExists ? loadWorkspace(identity) : ensureWorkspace(identity);
+      if (!chapter.workspaceExists) {
+        return { storyId, workspaceId: workspace.id, version: workspace.versions[0], initialized: true };
+      }
+      const result = createProductionVersion(workspace.id, {});
+      return { storyId, workspaceId: workspace.id, version: result.version, initialized: false };
+    });
+    const updatedSeries = seriesType === "main"
+      ? resolveMainSeries(body.query || "all")
+      : resolveEventSeries(body.query);
+    sendJson(response, 201, { created, series: updatedSeries });
     return true;
   }
   if (request.method === "GET" && pathname === "/api/cover-series/event") {
@@ -450,6 +500,14 @@ async function handleApi(request, response, parsedUrl) {
     const body = await readBody(request);
     sendJson(response, 200, {
       production: updateSpeakerResolution(match[0], match[1], body.resolution, body.note),
+    });
+    return true;
+  }
+  match = routeMatch(pathname, /^\/api\/workspaces\/([^/]+)\/production\/speakers$/u);
+  if (request.method === "PATCH" && match) {
+    const body = await readBody(request);
+    sendJson(response, 200, {
+      production: updateSpeakerResolutions(match[0], body.stableKeys, body.resolution, body.note),
     });
     return true;
   }
@@ -986,6 +1044,7 @@ async function handleApi(request, response, parsedUrl) {
 }
 
 const frontendDist = path.join(appRoot, ".local-files", "tmp", "create-story-workbench-ui");
+const viewerResourceRoot = path.join(appRoot, "public", "resources");
 await buildFrontend({
   root: workbenchRoot,
   configFile: path.join(workbenchRoot, "vite.config.mjs"),
@@ -1012,12 +1071,50 @@ function serveFrontend(request, response, parsedUrl) {
   fs.createReadStream(filePath).pipe(response);
 }
 
+function serveViewerResource(request, response, parsedUrl) {
+  if (request.method !== "GET" && request.method !== "HEAD") {
+    response.statusCode = 405;
+    response.end();
+    return;
+  }
+
+  const relativePath = decodeURIComponent(parsedUrl.pathname.slice("/resources/".length));
+  const filePath = assertInsideDirectory(
+    viewerResourceRoot,
+    path.join(viewerResourceRoot, relativePath),
+    "viewer resource path",
+  );
+  if (!fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
+    response.statusCode = 404;
+    response.end();
+    return;
+  }
+
+  const contentTypes = {
+    ".atlas": "text/plain; charset=utf-8",
+    ".png": "image/png",
+    ".skel": "application/octet-stream",
+  };
+  response.statusCode = 200;
+  response.setHeader("Content-Type", contentTypes[path.extname(filePath)] || "application/octet-stream");
+  response.setHeader("Content-Length", fs.statSync(filePath).size);
+  if (request.method === "HEAD") {
+    response.end();
+    return;
+  }
+  fs.createReadStream(filePath).pipe(response);
+}
+
 const server = http.createServer(async (request, response) => {
   try {
     const parsedUrl = new URL(request.url, `http://${host}:${port}`);
     if (parsedUrl.pathname.startsWith("/api/")) {
       const handled = await handleApi(request, response, parsedUrl);
       if (!handled) sendJson(response, 404, { error: "not-found" });
+      return;
+    }
+    if (parsedUrl.pathname.startsWith("/resources/")) {
+      serveViewerResource(request, response, parsedUrl);
       return;
     }
     serveFrontend(request, response, parsedUrl);

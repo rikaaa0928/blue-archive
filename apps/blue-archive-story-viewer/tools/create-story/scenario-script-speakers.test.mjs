@@ -4,9 +4,11 @@ import test from "node:test";
 import {
   inferScenarioRole,
   isAnonymousScenarioSpeaker,
+  isCollectiveScenarioSpeaker,
   isUnknownScenarioSpeaker,
   parseScenarioScriptSpeakers,
   replaceScenarioDialogueSpeaker,
+  shouldReviewAsCollectiveScenarioSpeaker,
 } from "./scenario-script-speakers.mjs";
 
 test("uses the same character-line fields as the player", () => {
@@ -40,6 +42,16 @@ test("shares unknown and anonymous classification", () => {
   assert.equal(isUnknownScenarioSpeaker("？？？"), true);
   assert.equal(isAnonymousScenarioSpeaker("스케반 A"), true);
   assert.equal(isAnonymousScenarioSpeaker("카즈사"), false);
+});
+
+test("does not review a resolved character with an organization suffix as collective", () => {
+  const speaker = "코하루 정의실현부";
+  assert.equal(isCollectiveScenarioSpeaker(speaker), true);
+  assert.equal(
+    shouldReviewAsCollectiveScenarioSpeaker(speaker, "小春"),
+    false,
+  );
+  assert.equal(shouldReviewAsCollectiveScenarioSpeaker("정의실현부"), true);
 });
 
 test("replaces only the spoken character line in a multiline script", () => {

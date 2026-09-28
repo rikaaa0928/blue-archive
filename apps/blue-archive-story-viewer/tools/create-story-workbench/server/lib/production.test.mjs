@@ -24,10 +24,12 @@ import {
   revokeVoiceScriptApproval,
   setVoiceScriptSkip,
   updateSpeakerResolution,
+  updateSpeakerResolutions,
   writeReferenceArtifact,
 } from "./production.mjs";
 import { jsonDigest, storyDigest, workspaceDirectory } from "./utils.mjs";
 import { ensureWorkspace } from "./workspaces.mjs";
+import { productionTtsIndices } from "../stage-runner.mjs";
 
 const identity = { type: "other", storyId: "999999999902" };
 const candidateIdentity = { type: "other", storyId: "999999999903" };
@@ -35,6 +37,8 @@ const voiceCandidateIdentity = { type: "other", storyId: "999999999904" };
 const videoPreviewIdentity = { type: "other", storyId: "999999999905" };
 const baselineIdentity = { type: "other", storyId: "999999999906" };
 const npcIdentity = { type: "other", storyId: "999999999907" };
+const batchSpeakerIdentity = { type: "other", storyId: "999999999908" };
+const inheritedReferenceIdentity = { type: "other", storyId: "999999999909" };
 
 test("preserves spaces inside collective member stable keys", () => {
   assert.deepEqual(
@@ -194,6 +198,36 @@ test("allows every unresolved speaker exception to use the default NPC preset", 
     const speaker = getProduction(workspace.id).voice.speakers.items[0];
     assert.deepEqual(speaker.resolution, { type: "npc", preset: "anonymous-npc-v4" });
     assert.equal(getProduction(workspace.id).voice.speakers.ready, true);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("updates multiple speaker mappings atomically", () => {
+  const root = workspaceDirectory(batchSpeakerIdentity);
+  fs.rmSync(root, { recursive: true, force: true });
+  try {
+    const workspace = ensureWorkspace(batchSpeakerIdentity);
+    initializeProduction(workspace.id, story(), { source: "test" });
+    recordSpeakerScan(workspace.id, ["甲", "乙"].map(stableKey => ({
+      stableKey,
+      sourceSpeaker: stableKey,
+      requiresHuman: true,
+      reason: "unknown-speaker",
+      resolution: null,
+    })));
+    updateSpeakerResolutions(
+      workspace.id,
+      ["甲", "乙"],
+      { type: "character", stableKey: "아로나", characterName: "阿罗娜" },
+      "批量映射",
+    );
+    const speakers = getProduction(workspace.id).voice.speakers;
+    assert.equal(speakers.ready, true);
+    assert.deepEqual(speakers.items.map(item => item.resolution), [
+      { type: "character", stableKey: "아로나", characterName: "阿罗娜" },
+      { type: "character", stableKey: "아로나", characterName: "阿罗娜" },
+    ]);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
@@ -389,6 +423,35 @@ test("marks complete existing viewer tracks ready without inventing LLM runs", (
     assert.equal(production.voice.script.approvalSource, "existing-viewer-baseline");
     assert.equal(production.voice.script.generationCount, 0);
     assert.deepEqual(production.base.baseline.preservedVoiceIndices, [1]);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("regenerates inherited voice only for a speaker whose reference selection changed", () => {
+  const root = workspaceDirectory(inheritedReferenceIdentity);
+  fs.rmSync(root, { recursive: true, force: true });
+  try {
+    const workspace = ensureWorkspace(inheritedReferenceIdentity);
+    const base = story();
+    base.content[0].VoiceJp = "https://example.test/old-0.mp3";
+    base.content[1].ScriptKr = "1;다른;00;대사";
+    base.content[1].TextJp = "別の台詞。";
+    base.content[1].TextJpVoice = "別の台詞。";
+    base.content[1].VoiceJp = "https://example.test/old-1.mp3";
+    initializeProduction(workspace.id, base, {
+      source: "test", baseline: { adopted: true, preservedVoiceIndices: [0, 1] },
+    }, { approveCnBaseline: true, approveVoiceScriptBaseline: true });
+    recordSpeakerScan(workspace.id, ["테스트", "다른"].map(stableKey => ({
+      stableKey, sourceSpeaker: stableKey, available: true, requiresHuman: false,
+      resolution: { type: "character", stableKey, characterName: stableKey },
+    })));
+    writeReferenceArtifact(workspace.id, { 테스트: ["clip-1"], 다른: ["clip-a"] }, { source: "automatic" });
+    assert.deepEqual(productionTtsIndices(getProduction(workspace.id), base), []);
+    writeReferenceArtifact(workspace.id, { 테스트: ["clip-2"], 다른: ["clip-a"] }, { source: "human-fine-tune" });
+    const production = getProduction(workspace.id);
+    assert.deepEqual(production.voice.references.regenerateSpeakers, ["테스트"]);
+    assert.deepEqual(productionTtsIndices(production, base), [0]);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

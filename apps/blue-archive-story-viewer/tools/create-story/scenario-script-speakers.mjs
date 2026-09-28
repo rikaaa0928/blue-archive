@@ -99,3 +99,11 @@ export function isCollectiveScenarioSpeaker(speaker) {
     String(speaker ?? "").replace(/\s+/gu, ""),
   );
 }
+
+export function shouldReviewAsCollectiveScenarioSpeaker(
+  speaker,
+  resolvedCharacterName = "",
+) {
+  return !String(resolvedCharacterName ?? "").trim() &&
+    isCollectiveScenarioSpeaker(speaker);
+}

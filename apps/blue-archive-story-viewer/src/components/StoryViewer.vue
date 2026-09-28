@@ -53,6 +53,7 @@
           :width="playerWidth"
           :height="playerHeight"
           data-url="https://yuuka.cdn.diyigemt.com/image/ba-all-data"
+          :local-resource-url="localResourceUrl"
           :language="playerLanguage"
           :userName="userName"
           :story-summary="summary"
@@ -149,6 +150,10 @@ import {
 
 const route = useRoute();
 const router = useRouter();
+const localResourceUrl = new URL(
+  `${import.meta.env.BASE_URL}resources/`,
+  window.location.origin
+).toString();
 const storyId = computed(() => route.params.id as string);
 const storyQueryType = computed<QueryType>(() => {
   const queryType = route.query.type;

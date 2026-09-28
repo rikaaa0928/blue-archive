@@ -41,6 +41,8 @@ Rules:
   only inserting concise English tags that describe the character's emotion.
 - Ruby annotations in TextJp have already been replaced with their phonetic
   readings in code. Preserve those readings exactly in TextJpVoice.
+- "[USERNAME]" placeholders have already been replaced with "エロマンガ".
+  Preserve it as "エロマンガ". Do not re-introduce "[USERNAME]".
 - Prefer the supplied official Basic + Advanced Emotion tags. Fish Audio S2
   also supports natural-language bracket cues: when the official vocabulary is
   genuinely insufficient, you may invent a short description of an emotional
@@ -277,9 +279,12 @@ function collectTextUnits(story, rubyMappings) {
   return story.content
     .map((unit, index) => ({
       index,
-      textJp: replaceRubySurfaceTextWithReadings(unit.TextJp, rubyMappings),
+      textJp: replaceRubySurfaceTextWithReadings(
+        String(unit.TextJp ?? "").replaceAll("[USERNAME]", "エロマンガ"),
+        rubyMappings,
+      ),
       textCn: String(unit.TextCn ?? ""),
-      textJpVoice: String(unit.TextJpVoice ?? ""),
+      textJpVoice: String(unit.TextJpVoice ?? "").replaceAll("[USERNAME]", "エロマンガ"),
       hasTextJpVoice: Object.hasOwn(unit, "TextJpVoice"),
       scriptKr: String(unit.ScriptKr ?? ""),
       sound: String(unit.Sound ?? ""),

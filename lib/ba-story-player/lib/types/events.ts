@@ -263,6 +263,8 @@ export type LoadingImageUrl = {
 };
 
 export interface PlayAudio {
+  /** Stop the inherited background music before playing this unit. */
+  stopBgm?: boolean;
   bgm?: {
     url: string;
     bgmArgs: BGMExcelTableItem;

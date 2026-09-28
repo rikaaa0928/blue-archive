@@ -12,7 +12,10 @@ import {
   isUnknownScenarioSpeaker,
   parseScenarioScriptSpeakers,
 } from "./scenario-script-speakers.mjs";
-import { anonymousNpcPresetVoice } from "./shared-config.mjs";
+import {
+  anonymousNpcPresetVoice,
+  effectiveStoryTtsText,
+} from "./shared-config.mjs";
 import { requestZeroTts } from "./zerotts-api-client.mjs";
 
 const __dirname = path.dirname(url.fileURLToPath(import.meta.url));
@@ -105,7 +108,7 @@ Options:
   --reference-max <n>       max total reference seconds, default: 60
   --reference-min-clip <n>  min seconds for each selected reference clip, default: 5
   --reference-gap <n>       silence seconds inserted between reference clips, default: 0.8
-  --force                   recreate references/tasks and overwrite downloaded audio
+  --force                   rebuild local references/tasks and overwrite downloaded audio
   --changed-only            process only lines changed since their last R2 publish
   --missing-only            process only voice lines whose VoiceJp is empty
   --regenerate-collective-member <speaker>
@@ -351,10 +354,8 @@ function resolveStoryId(args, storyPath) {
   return storyId;
 }
 
-function effectiveTtsText(unit) {
-  return unit.TextJpVoice !== undefined && unit.TextJpVoice !== null
-    ? String(unit.TextJpVoice).trim()
-    : String(unit.TextJp || "").trim();
+export function effectiveTtsText(unit) {
+  return effectiveStoryTtsText(unit);
 }
 
 function collectiveScanDigest(story) {
@@ -970,6 +971,8 @@ function prepareReferenceAudio({ args, speaker, characterName, manifest }) {
       manualSelection.every((name, index) => name === cachedSelection[index])
     );
     if (selectionMatches) {
+      const referenceText = fs.readFileSync(textPath, "utf8").trim();
+      const audioFingerprint = referenceAudioFingerprint(audioPath, referenceText);
       manifest.references[referenceKey] = {
         ...existing,
         ...cached,
@@ -977,7 +980,12 @@ function prepareReferenceAudio({ args, speaker, characterName, manifest }) {
         characterName,
         audioPath,
         textPath,
-        referenceText: fs.readFileSync(textPath, "utf8").trim(),
+        referenceText,
+        audioFingerprint,
+        uploadedFingerprint: existing?.uploadedFingerprint || (
+          existing?.referenceId && sameReferenceClips(existing.clips, cached.clips) &&
+          existing.referenceText === referenceText ? audioFingerprint : ""
+        ),
       };
       return manifest.references[referenceKey];
     }
@@ -1022,6 +1030,7 @@ function prepareReferenceAudio({ args, speaker, characterName, manifest }) {
       audioPath: clip.audioPath,
       text: clip.text,
     })),
+    audioFingerprint: args.dryRun ? "" : referenceAudioFingerprint(audioPath, referenceText),
   };
   if (!args.dryRun) {
     fs.writeFileSync(
@@ -1032,8 +1041,24 @@ function prepareReferenceAudio({ args, speaker, characterName, manifest }) {
   manifest.references[referenceKey] = {
     ...existing,
     ...prepared,
+    uploadedFingerprint: existing?.uploadedFingerprint || (
+      existing?.referenceId && sameReferenceClips(existing.clips, prepared.clips) &&
+      existing.referenceText === referenceText ? prepared.audioFingerprint : ""
+    ),
   };
   return manifest.references[referenceKey];
+}
+
+function sameReferenceClips(left, right) {
+  return Array.isArray(left) && Array.isArray(right) &&
+    left.length === right.length &&
+    left.every((clip, index) => String(clip.name) === String(right[index].name));
+}
+
+function referenceAudioFingerprint(audioPath, referenceText) {
+  return crypto.createHash("sha256")
+    .update(fs.readFileSync(audioPath)).update("\0").update(referenceText)
+    .digest("hex");
 }
 
 function prepareNpcReferenceAudio({ speaker, characterName, manifest }) {
@@ -1129,7 +1154,7 @@ async function apiRequest(args, endpoint, options = {}) {
   });
 }
 
-async function uploadReference(args, reference) {
+export async function uploadReference(args, reference) {
   if (reference.presetReference && reference.referenceId) {
     console.log(
       `Reusing preset voice for ${reference.characterName}: ` +
@@ -1137,61 +1162,46 @@ async function uploadReference(args, reference) {
     );
     return reference;
   }
-  // 先检查服务器上是否已经有同样名字的语音，避免重复上传
-  try {
-    const listData = await apiRequest(args, "/voices");
-    const voices = Array.isArray(listData) ? listData : listData?.items || [];
-    const existingVoice = voices.find(
-      voice => voice.name === `BA ${reference.characterName}`,
-    );
-    if (existingVoice) {
-      console.log(
-        `Found existing voice on server: ${existingVoice.name} ` +
-          `(referenceId=${existingVoice.referenceId})`,
-      );
-      return {
-        ...reference,
-        voiceId: existingVoice.voiceId || existingVoice.id,
-        referenceId: existingVoice.referenceId || existingVoice.id,
-        voiceStatus: existingVoice.status || "READY",
-        providerSyncStatus: existingVoice.providerSyncStatus,
-      };
-    }
-  } catch (error) {
-    console.warn(
-      `Failed to check existing voices on server: ${error.message}`,
-    );
-    const cachedReference =
-      reference.referenceId
-        ? reference
-        : findCachedReference(args.localFileRoot, reference);
-    if (cachedReference?.referenceId) {
-      console.warn(
-        `Reusing cached voice for ${reference.characterName}: ` +
-          `${cachedReference.referenceId}`,
-      );
-      return {
-        ...reference,
-        voiceId: cachedReference.voiceId,
-        referenceId: cachedReference.referenceId,
-        voiceStatus: cachedReference.voiceStatus || "READY",
-        providerSyncStatus: cachedReference.providerSyncStatus,
-      };
-    }
+  if (!/^[a-f0-9]{64}$/u.test(reference.audioFingerprint || "")) {
+    throw new Error(`Missing reference audio fingerprint for ${reference.speaker}`);
   }
-
-  const form = new FormData();
+  const name = `BA ${reference.characterName}`;
   const audioBytes = fs.readFileSync(reference.audioPath);
-  const audioBlob = new Blob([audioBytes], { type: "audio/mpeg" });
-  form.append("name", `BA ${reference.characterName}`);
-  form.append("description", `Blue Archive reference voice for ${reference.speaker}`);
+  const form = new FormData();
+  form.append("name", name);
+  form.append("description", `Blue Archive reference voice for ${reference.speaker}; audio sha256 ${reference.audioFingerprint}`);
   form.append("reference_text", reference.referenceText);
-  form.append("audio", audioBlob, path.basename(reference.audioPath));
+  form.append("audio", new Blob([audioBytes], { type: "audio/mpeg" }), path.basename(reference.audioPath));
+  const listData = await apiRequest(args, "/voices");
+  const voices = Array.isArray(listData) ? listData : listData?.items || [];
+  const existingVoice = voices.find(voice => voice.name === name);
+  const existingId = existingVoice?.referenceId;
+  if (existingId && reference.referenceId === existingId &&
+      reference.uploadedFingerprint === reference.audioFingerprint) {
+    return {
+      ...reference,
+      voiceId: existingVoice.voiceId || existingVoice.id,
+      voiceStatus: existingVoice.status || "READY",
+      providerSyncStatus: existingVoice.providerSyncStatus,
+    };
+  }
+  // ZeroTTS has no audio replacement endpoint. Remove the stale named voice so
+  // the new recording is the only active reference for this character.
+  for (const voice of voices.filter(item => item.name === name)) {
+    const referenceId = voice.referenceId;
+    if (!referenceId) throw new Error(`Existing voice ${name} has no referenceId`);
+    await apiRequest(args, `/voices/ref/${encodeURIComponent(referenceId)}`, {
+      method: "DELETE",
+    });
+  }
 
   const data = await apiRequest(args, "/voices", {
     method: "POST",
     body: form,
   });
+  if (!data?.referenceId) {
+    throw new Error(`ZeroTTS did not return a referenceId for ${name}`);
+  }
 
   return {
     ...reference,
@@ -1199,47 +1209,12 @@ async function uploadReference(args, reference) {
     referenceId: data.referenceId,
     voiceStatus: data.status,
     providerSyncStatus: data.providerSyncStatus,
+    uploadedFingerprint: reference.audioFingerprint,
+    remoteName: name,
   };
 }
 
-function findCachedReference(localFileRoot, reference) {
-  const ttsRoot = path.join(path.resolve(localFileRoot), "tts");
-  if (!fs.existsSync(ttsRoot)) {
-    return null;
-  }
-
-  const pendingDirectories = [ttsRoot];
-  while (pendingDirectories.length > 0) {
-    const directory = pendingDirectories.pop();
-    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
-      const entryPath = path.join(directory, entry.name);
-      if (entry.isDirectory()) {
-        pendingDirectories.push(entryPath);
-        continue;
-      }
-      if (entry.name !== "voice-zero-tts-manifest.json") {
-        continue;
-      }
-
-      try {
-        const manifest = JSON.parse(fs.readFileSync(entryPath, "utf8"));
-        const match = Object.values(manifest.references || {}).find(
-          candidate =>
-            candidate.characterName === reference.characterName &&
-            candidate.referenceId,
-        );
-        if (match) {
-          return match;
-        }
-      } catch (error) {
-        console.warn(`Skipping invalid TTS manifest ${entryPath}: ${error.message}`);
-      }
-    }
-  }
-  return null;
-}
-
-async function createTask(args, line, reference, task) {
+export async function createTask(args, line, reference, task) {
   const generatedTextHash = textHash(line.text);
   if (
     task?.taskId &&

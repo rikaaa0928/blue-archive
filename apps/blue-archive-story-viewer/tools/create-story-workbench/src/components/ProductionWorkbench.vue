@@ -124,8 +124,22 @@
                   </table>
                 </div>
               </details>
+              <div class="speaker-batch-toolbar">
+                <label class="speaker-batch-all"><input type="checkbox" :checked="allHumanSpeakersSelected" @change="toggleAllHumanSpeakers($event.target.checked)" /> 全选例外</label>
+                <b>已选 {{ speakerBatchSelection.size }} 个说话人</b>
+                <select v-model="speakerBatchDraft.type">
+                  <option value="character">批量映射到角色</option>
+                  <option value="npc">批量使用 NPC 音色</option>
+                </select>
+                <select v-if="speakerBatchDraft.type === 'character'" v-model="speakerBatchDraft.stableKey" @change="fillBatchSpeakerCharacterName">
+                  <option value="">选择目标角色</option>
+                  <option v-for="character in speakerCharacterOptions" :key="character.stableKey" :value="character.stableKey">{{ character.characterName }} · {{ character.stableKey }}</option>
+                </select>
+                <button class="primary small" :disabled="!speakerBatchSelection.size || speakerBatchSaving || speakerBatchDraft.type === 'character' && !speakerBatchDraft.stableKey" @click="saveSpeakerBatch">{{ speakerBatchSaving ? '正在保存…' : '应用批量映射' }}</button>
+              </div>
               <article v-for="item in humanSpeakers" :key="item.stableKey" :class="{ active: activeSpeakerKey === item.stableKey }">
                 <header class="speaker-exception-heading">
+                  <label class="speaker-batch-select"><input type="checkbox" :checked="speakerBatchSelection.has(item.stableKey)" @change="toggleBatchSpeaker(item.stableKey, $event.target.checked)" /> 批量</label>
                   <div>
                     <b lang="ko">{{ item.sourceSpeaker || '???' }}</b>
                     <span v-if="speakerNameReference(item)" class="speaker-source-name-reference">
@@ -150,7 +164,10 @@
                   <select v-model="speakerDraft[item.stableKey].type">
                     <option value="character">映射到角色</option><option value="npc">使用预制 NPC 音色</option><option v-if="item.reason === 'collective-speaker'" value="collective">团体发言成员</option>
                   </select>
-                  <input v-if="speakerDraft[item.stableKey].type === 'character'" v-model.trim="speakerDraft[item.stableKey].stableKey" list="known-speaker-keys" placeholder="韩文稳定 key" @input="fillSpeakerCharacterName(item)" @change="fillSpeakerCharacterName(item)" />
+                  <select v-if="speakerDraft[item.stableKey].type === 'character'" v-model="speakerDraft[item.stableKey].stableKey" @change="fillSpeakerCharacterName(item)">
+                    <option value="">选择目标角色</option>
+                    <option v-for="character in speakerCharacterOptions" :key="character.stableKey" :value="character.stableKey">{{ character.characterName }} · {{ character.stableKey }}</option>
+                  </select>
                   <input v-if="speakerDraft[item.stableKey].type === 'character'" v-model.trim="speakerDraft[item.stableKey].characterName" placeholder="中文名" />
                   <input v-if="speakerDraft[item.stableKey].type === 'collective'" v-model.trim="speakerDraft[item.stableKey].membersText" placeholder="韩文稳定 key，逗号分隔" />
                   <button class="primary small" @click="saveSpeaker(item)">保存判断</button>
@@ -160,12 +177,11 @@
             </div>
             <aside v-if="humanSpeakers.length" class="speaker-context-player">
               <div class="section-title"><div><h3>剧情播放器定位</h3><small v-if="locatedSpeakerIndex !== null">播放器已定位 #{{ locatedSpeakerIndex }}，可前后播放确认出场角色</small><small v-else-if="activeSpeakerIndex !== null">当前查看 #{{ activeSpeakerIndex }}；点击行号后定位播放器</small></div><label class="player-mute-toggle"><input v-model="speakerPlayerMuted" type="checkbox" /> 静音</label></div>
-              <StoryPlayer v-if="speakerContextStory" :key="speakerContextPlayerKey" :story="speakerContextStory" :change-index="speakerPlayerIndex" :width="640" :height="360" data-url="https://yuuka.cdn.diyigemt.com/image/ba-all-data" language="Cn" user-name="老师" :story-summary="{ chapterName: String(speakerContextStory.GroupId || ''), summary: '' }" :use-mp3="true" :muted="speakerPlayerMuted" @initiated="handleSpeakerPlayerInitiated" @error="emit('error', $event)" />
+              <StoryPlayer v-if="speakerContextStory" :key="speakerContextPlayerKey" :story="speakerContextStory" :change-index="speakerPlayerIndex" :width="640" :height="360" data-url="https://yuuka.cdn.diyigemt.com/image/ba-all-data" local-resource-url="/resources/" language="Cn" user-name="老师" :story-summary="{ chapterName: String(speakerContextStory.GroupId || ''), summary: '' }" :use-mp3="true" :muted="speakerPlayerMuted" :defer-playback="true" @initiated="handleSpeakerPlayerInitiated" @error="emit('error', $event)" />
               <div v-else class="player-placeholder">正在载入当前剧情播放器…</div>
               <p class="muted">点击左侧任意“▶ #行号”会在同一个播放器内定位，不会重新从剧情开头播放。</p>
             </aside>
           </div>
-          <datalist id="known-speaker-keys"><option v-for="item in knownSpeakers" :key="item.stableKey" :value="item.stableKey">{{ item.characterName }}</option></datalist>
           <div class="reference-summary">
             <div><b>参考音</b><small>{{ production.voice.references.ready ? '已有选择，可随时进入微调' : '等待一键自动准备' }}</small></div>
             <button class="primary" :disabled="!production.voice.speakers.ready || busy" @click="run('production-reference-prepare')">一键拉取并自动选择</button>
@@ -233,7 +249,7 @@
 
         <section class="stage-card">
           <div class="stage-heading"><div><p class="eyebrow">TTS & R2</p><h2>生成、试听与上传</h2></div></div>
-          <p class="stage-description">说话人与参考音、配音稿两项前置完成后才生成。后续局部修改只重建受影响的行。</p>
+          <p class="stage-description">保存参考音选择后，点击下方按钮重新上传该角色的参考音并增量生成相关语音。ZeroTTS 不支持覆盖音频，工作台会删除同名旧参考音后创建新参考音；未改角色的语音继续复用。</p>
           <button class="primary" :disabled="!voicePrerequisitesReady || busy" @click="run('production-tts')">增量生成并上传语音</button>
           <span v-if="production.voice.tts.exists" :class="['badge', production.voice.tts.current ? 'completed' : 'ready']">{{ production.voice.tts.completed }}/{{ production.voice.tts.total }} 条完成{{ production.voice.tts.current ? '' : ' · 上游已改动' }}</span>
           <div v-if="ttsLines.length" class="tts-audio-list production-audio-list">
@@ -333,6 +349,9 @@ const activeSpeakerKey = ref(""); const activeSpeakerIndex = ref(null); const sp
 const speakerPlayerReady = ref(false); const pendingSpeakerIndex = ref(null); const locatedSpeakerIndex = ref(null);
 const speakerPlayerMuted = ref(true);
 const copiedSpeakerKey = ref("");
+const speakerBatchSelection = ref(new Set());
+const speakerBatchDraft = ref({ type: "character", stableKey: "", characterName: "" });
+const speakerBatchSaving = ref(false);
 let copiedSpeakerKeyTimer: number | undefined;
 
 const HistoryList = defineComponent({ props: { title: String, records: Array }, setup(inner) { return () => h("details", { class: "history-box" }, [h("summary", `${inner.title}（${inner.records?.length || 0}）`), ...(inner.records || []).slice().reverse().map(record => h("article", [h("header", [h("b", record.id), h("small", formatTime(record.editedAt))]), h("p", record.note || "无说明"), h("pre", JSON.stringify(record.changes || record.skipDecision || {}, null, 2))]))]); } });
@@ -379,11 +398,45 @@ async function applySpeakerPlayerIndex(index) { speakerPlayerIndex.value = undef
 async function locateSpeaker(item, index) { activeSpeakerKey.value = item.stableKey; activeSpeakerIndex.value = index; speakerOccurrenceSelection.value = { ...speakerOccurrenceSelection.value, [item.stableKey]: index }; await loadSpeakerContextStory(); if (!speakerPlayerReady.value) { pendingSpeakerIndex.value = index; return; } await applySpeakerPlayerIndex(index); }
 async function handleSpeakerPlayerInitiated() { speakerPlayerReady.value = true; if (!Number.isSafeInteger(pendingSpeakerIndex.value)) return; const index = pendingSpeakerIndex.value; pendingSpeakerIndex.value = null; await applySpeakerPlayerIndex(index); }
 const knownSpeakers = computed(() => { const byKey = new Map(); for (const item of production.value?.voice.speakers.items || []) if (item.resolution?.type === "character") byKey.set(item.resolution.stableKey, item.resolution); return [...byKey.values()]; });
+const speakerCharacterOptions = computed(() => {
+  const isUsableCharacter = item => item?.stableKey && item.stableKey !== "???" && item.characterName !== "？？？";
+  const byKey = new Map(knownSpeakers.value.filter(isUsableCharacter).map(item => [item.stableKey, item]));
+  for (const item of storyCharacterNameReferences.value) {
+    const candidate = {
+      stableKey: item.stableKey,
+      characterName: item.nameCn || item.nameJp || item.nameKr || item.stableKey,
+    };
+    if (isUsableCharacter(candidate) && !byKey.has(item.stableKey)) byKey.set(item.stableKey, candidate);
+  }
+  return [...byKey.values()].sort((left, right) =>
+    String(left.characterName).localeCompare(String(right.characterName), "zh-CN"));
+});
+const allHumanSpeakersSelected = computed(() =>
+  humanSpeakers.value.length > 0 && humanSpeakers.value.every(item => speakerBatchSelection.value.has(item.stableKey)));
 const referenceSpeakers = computed(() => { const byKey = new Map(knownSpeakers.value.map(item => [item.stableKey, item])); for (const item of production.value?.voice.speakers.items || []) { if (item.resolution?.type === "collective") for (const stableKey of item.resolution.members || []) if (!byKey.has(stableKey)) byKey.set(stableKey, { stableKey, characterName: stableKey }); } return [...byKey.values()]; });
-function fillSpeakerCharacterName(item) { const draft = speakerDraft.value[item.stableKey]; if (!draft || draft.type !== "character") return; const known = knownSpeakers.value.find(candidate => candidate.stableKey === draft.stableKey); if (known) draft.characterName = known.characterName; }
+function fillSpeakerCharacterName(item) { const draft = speakerDraft.value[item.stableKey]; if (!draft || draft.type !== "character") return; const known = speakerCharacterOptions.value.find(candidate => candidate.stableKey === draft.stableKey); if (known) draft.characterName = known.characterName; }
 async function copyText(value) { const textarea = document.createElement("textarea"); textarea.value = value; textarea.style.position = "fixed"; textarea.style.opacity = "0"; document.body.appendChild(textarea); textarea.select(); const copied = document.execCommand("copy"); textarea.remove(); if (copied) return; if (navigator.clipboard) { await navigator.clipboard.writeText(value); return; } throw new Error("无法复制韩文稳定 key，请手动选择文本复制"); }
 async function copySpeakerKey(stableKey) { try { await copyText(stableKey); copiedSpeakerKey.value = stableKey; window.clearTimeout(copiedSpeakerKeyTimer); copiedSpeakerKeyTimer = window.setTimeout(() => { if (copiedSpeakerKey.value === stableKey) copiedSpeakerKey.value = ""; }, 1600); } catch (cause) { emit("error", cause); } }
 function saveSpeaker(item) { fillSpeakerCharacterName(item); const draft = speakerDraft.value[item.stableKey]; const resolution = draft.type === "collective" ? { type: "collective", members: parseCollectiveMemberKeys(draft.membersText) } : draft; mutate(`/speakers/${encodeURIComponent(item.stableKey)}`, "PATCH", { resolution, note: "人工确认说话人例外" }); }
+function toggleBatchSpeaker(stableKey, checked) { const next = new Set(speakerBatchSelection.value); if (checked) next.add(stableKey); else next.delete(stableKey); speakerBatchSelection.value = next; }
+function toggleAllHumanSpeakers(checked) { speakerBatchSelection.value = checked ? new Set(humanSpeakers.value.map(item => item.stableKey)) : new Set(); }
+function fillBatchSpeakerCharacterName() { const known = speakerCharacterOptions.value.find(item => item.stableKey === speakerBatchDraft.value.stableKey); speakerBatchDraft.value.characterName = known?.characterName || ""; }
+async function saveSpeakerBatch() {
+  fillBatchSpeakerCharacterName();
+  const stableKeys = [...speakerBatchSelection.value];
+  if (!stableKeys.length) return;
+  const resolution = speakerBatchDraft.value.type === "npc"
+    ? { type: "npc" }
+    : { type: "character", stableKey: speakerBatchDraft.value.stableKey, characterName: speakerBatchDraft.value.characterName };
+  speakerBatchSaving.value = true;
+  try {
+    await api("/speakers", { method: "PATCH", body: JSON.stringify({ stableKeys, resolution, note: `批量确认 ${stableKeys.length} 个说话人` }) });
+    speakerBatchSelection.value = new Set();
+    await load();
+    emit("changed");
+  } catch (cause) { emit("error", cause); }
+  finally { speakerBatchSaving.value = false; }
+}
 async function loadReference(stableKey) { try { activeReferenceSpeaker.value = stableKey; referenceDetail.value = await api(`/references/${encodeURIComponent(stableKey)}`); referenceSelected.value = new Set(referenceDetail.value.selected); } catch (cause) { emit("error", cause); } }
 function toggleReference(name, checked) { const next = new Set(referenceSelected.value); if (checked) next.add(name); else next.delete(name); referenceSelected.value = next; }
 async function saveReference() { const stableKey = activeReferenceSpeaker.value; try { await api(`/references/${encodeURIComponent(stableKey)}`, { method: "PUT", body: JSON.stringify({ selected: [...referenceSelected.value], note: `人工微调 ${stableKey} 参考音` }) }); await load(); await loadReference(stableKey); } catch (cause) { emit("error", cause); } }
@@ -408,6 +461,6 @@ const isEventStory = computed(() => props.status?.workspace?.identity?.type === 
 const isMainStory = computed(() => props.status?.workspace?.identity?.type === "main");
 function shortDigest(value) { return String(value || "").replace("sha256:", "").slice(0, 10); } function formatTime(value) { return value ? new Date(value).toLocaleString("zh-CN", { hour12: false }) : ""; }
 
-watch(() => props.workspaceId, () => { speakerContextStory.value = null; speakerPlayerReady.value = false; pendingSpeakerIndex.value = null; locatedSpeakerIndex.value = null; activeSpeakerKey.value = ""; selectedCnRunId.value = ""; selectedCnRun.value = null; selectedScriptRunId.value = ""; selectedScriptRun.value = null; load(); }); watch(() => props.section, next => { if (next !== "production-voice") { speakerPlayerReady.value = false; locatedSpeakerIndex.value = null; return; } if (production.value?.voice.speakers.scannedAt) loadSpeakerContextStory().catch(cause => emit("error", cause)); }); watch(() => props.latestJob?.status, (next, previous) => { if (next && next !== "running" && previous === "running") load(); });
+watch(() => props.workspaceId, () => { speakerContextStory.value = null; speakerPlayerReady.value = false; pendingSpeakerIndex.value = null; locatedSpeakerIndex.value = null; activeSpeakerKey.value = ""; speakerBatchSelection.value = new Set(); selectedCnRunId.value = ""; selectedCnRun.value = null; selectedScriptRunId.value = ""; selectedScriptRun.value = null; load(); }); watch(() => props.section, next => { if (next !== "production-voice") { speakerPlayerReady.value = false; locatedSpeakerIndex.value = null; return; } if (production.value?.voice.speakers.scannedAt) loadSpeakerContextStory().catch(cause => emit("error", cause)); }); watch(() => props.latestJob?.status, (next, previous) => { if (next && next !== "running" && previous === "running") load(); });
 onMounted(load);
 </script>

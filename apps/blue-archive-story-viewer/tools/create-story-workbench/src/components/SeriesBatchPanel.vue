@@ -26,7 +26,11 @@
             <input v-model.number="firstCount" class="count-input" type="number" min="1" :max="series.chapters.length" /> 章
           </label>
           <label><input v-model="selectionMode" type="radio" value="all" /> 全部章节</label>
+          <label><input v-model="selectionMode" type="radio" value="custom" /> 自选章节</label>
           <span>将处理 {{ selectedChapters.length }} 章</span>
+          <button class="ghost" :disabled="!selectedChapters.length || running || creatingVersions" @click="createVersions">
+            {{ creatingVersions ? '正在新增…' : '批量新增版本' }}
+          </button>
           <button class="primary" :disabled="!selectedChapters.length || running" @click="startBatch('complete')">一键完成（默认选择）</button>
           <button class="ghost" :disabled="!selectedChapters.length || running" @click="startBatch('review')">一键推进到人工审核</button>
         </div>
@@ -44,6 +48,7 @@
             :key="chapter.storyId"
             :class="['series-chapter', { selected: selectedIds.has(chapter.storyId) }]"
           >
+            <input type="checkbox" :checked="selectedIds.has(chapter.storyId)" @change="toggleChapter(chapter.storyId)" />
             <b>{{ String(chapter.order).padStart(2, '0') }}</b>
             <div><strong>{{ text(chapter.title) }}</strong><small>{{ chapter.storyId }}<template v-if="chapter.sourceGroupIds?.length > 1"> · 合并 {{ chapter.sourceGroupIds.join(' + ') }}</template></small></div>
             <span :class="['badge', chapter.progress.code]">{{ chapter.progress.label }}</span>
@@ -87,15 +92,17 @@ const props = defineProps({
   initialQuery: { type: String, default: "" },
   seriesType: { type: String, default: "event" },
 });
-const emit = defineEmits(["close", "open-workspace", "error"]);
+const emit = defineEmits(["close", "open-workspace", "error", "changed"]);
 const query = ref(props.initialQuery);
 const series = ref(null);
 const batches = ref([]);
 const currentBatch = ref(null);
 const loading = ref(false);
+const creatingVersions = ref(false);
 const error = ref("");
 const selectionMode = ref("first");
 const firstCount = ref(3);
+const customIds = ref(new Set());
 const cnModel = ref(localStorage.getItem("story-workbench-cn-llm-model") || "gemini-3.1-pro-preview");
 const voiceModel = ref(localStorage.getItem("story-workbench-voice-script-llm-model") ||
   localStorage.getItem("story-workbench-llm-model") || "gemini-3.7-flash");
@@ -103,9 +110,11 @@ let pollTimer;
 
 const selectedChapters = computed(() => {
   if (!series.value) return [];
-  return selectionMode.value === "all"
-    ? series.value.chapters
-    : series.value.chapters.slice(0, Math.max(1, Math.min(firstCount.value || 1, series.value.chapters.length)));
+  if (selectionMode.value === "all") return series.value.chapters;
+  if (selectionMode.value === "custom") {
+    return series.value.chapters.filter(chapter => customIds.value.has(chapter.storyId));
+  }
+  return series.value.chapters.slice(0, Math.max(1, Math.min(firstCount.value || 1, series.value.chapters.length)));
 });
 const selectedIds = computed(() => new Set(selectedChapters.value.map(chapter => chapter.storyId)));
 const running = computed(() => currentBatch.value?.status === "running");
@@ -130,6 +139,7 @@ async function resolveSeries() {
     const payload = await api(`/api/series/${encodeURIComponent(props.seriesType)}?query=${encodeURIComponent(query.value)}`);
     series.value = payload.series;
     firstCount.value = Math.min(3, series.value.chapters.length);
+    customIds.value = new Set();
   } catch (cause) { error.value = cause.message; }
   finally { loading.value = false; }
 }
@@ -140,6 +150,31 @@ async function loadBatches() {
       Number(batch.schemaVersion) >= 2 && batch.series?.type === props.seriesType);
     if (!currentBatch.value && batches.value.length) currentBatch.value = batches.value[0];
   } catch (cause) { error.value = cause.message; }
+}
+function toggleChapter(storyId) {
+  const next = selectionMode.value === "custom" ? new Set(customIds.value) : new Set(selectedIds.value);
+  if (next.has(storyId)) next.delete(storyId);
+  else next.add(storyId);
+  customIds.value = next;
+  selectionMode.value = "custom";
+}
+async function createVersions() {
+  const ids = selectedChapters.value.map(chapter => chapter.storyId);
+  if (!ids.length) return;
+  if (!window.confirm(`将为 ${ids.length} 章新增干净的生产版本并切换为当前版本：${ids.join('、')}。旧版本保留且可切回，确认继续？`)) return;
+  creatingVersions.value = true;
+  error.value = "";
+  try {
+    const payload = await api("/api/series/versions", {
+      method: "POST",
+      body: JSON.stringify({ query: series.value.id, seriesType: props.seriesType, storyIds: ids, confirmed: true }),
+    });
+    series.value = payload.series;
+    const initialized = payload.created.filter(item => item.initialized).length;
+    window.alert(`已处理 ${payload.created.length} 章：新增版本 ${payload.created.length - initialized} 章，首次建立版本 ${initialized} 章。现在可以直接点击一键完成。`);
+    emit("changed", { storyIds: ids });
+  } catch (cause) { error.value = cause.message; }
+  finally { creatingVersions.value = false; }
 }
 async function refreshBatch() {
   if (!currentBatch.value) return;

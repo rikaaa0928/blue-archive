@@ -15,6 +15,7 @@ import {
 import { loadTraditionalToSimplifiedCharacterNameMap } from "./ba-character-catalog.mjs";
 import { proofreadStoryTextCnWithLlm } from "./proofread-text-cn-with-llm.mjs";
 import { findMainStoryEpisode, loadMainStoryEpisodes } from "./main-story-modes.mjs";
+import { insertMainStoryBattleTransition } from "./main-story-battle-transition.mjs";
 
 const __dirname = path.dirname(url.fileURLToPath(import.meta.url));
 const appRoot = path.resolve(__dirname, "..", "..");
@@ -457,6 +458,9 @@ function printSummary(summary) {
     console.log(`Merged scenario GroupIds: ${summary.sourceGroupIds.join(", ")}`);
   }
   console.log(`Raw rows: ${summary.rawRows}`);
+  if (summary.outputRows !== summary.rawRows) {
+    console.log(`Assembled rows: ${summary.outputRows}`);
+  }
   console.log(`Output: ${summary.outputPath}`);
   if (summary.baL10n) {
     console.log(`ba-l10n source: ${summary.baL10n.source}`);
@@ -599,7 +603,7 @@ async function main() {
     if (mainEpisode) sourceGroupIds = mainEpisode.groupIds;
   }
   const rawSourceRows = decodeRawRows(source, sourceGroupIds);
-  const content = rawSourceRows.map(row =>
+  let content = rawSourceRows.map(row =>
     convertRawRow(row, args.storyId),
   );
   const baL10n = await supplementFromBaL10n(args, content, sourceGroupIds);
@@ -622,6 +626,9 @@ async function main() {
 
   if (!args.workbenchRawImport) {
     applyStoryTextJpVoiceOverrides(args.storyId, content);
+  }
+  if (mainEpisode) {
+    content = insertMainStoryBattleTransition(content, mainEpisode);
   }
   const rawSourceName = content.some(
     row => row.TextTw || row.TextEn || row.TextTh,
@@ -667,7 +674,8 @@ async function main() {
     mainEpisode,
     scenarioModePath,
     schemaPath,
-    rawRows: content.length,
+    rawRows: rawSourceRows.length,
+    outputRows: content.length,
     outputPath,
     baL10n,
     openCc,

@@ -44,6 +44,7 @@ const playerStudentsYamlPath = path.join(
   "yaml",
   "students.yaml",
 );
+const properNounsPath = path.join(__dirname, "zh-cn-proper-nouns.json");
 
 let playerCharacterTablePromise;
 let traditionalToSimplifiedCharacterNameMapPromise;
@@ -222,6 +223,40 @@ export function buildPlayerFamilyNameMap(studentRows) {
   );
 }
 
+export function buildTraditionalToSimplifiedProperNounMap(payload) {
+  if (!payload || !Array.isArray(payload.entries)) {
+    throw new Error(`${properNounsPath} must contain entries[]`);
+  }
+  const mappings = new Map();
+  for (const entry of payload.entries) {
+    const target = String(entry?.simplified ?? "").trim();
+    if (!target || !Array.isArray(entry?.traditional)) {
+      throw new Error(
+        `${properNounsPath} entries require traditional[] and simplified`,
+      );
+    }
+    for (const sourceValue of entry.traditional) {
+      const source = String(sourceValue ?? "").trim();
+      if (!source) continue;
+      const existing = mappings.get(source);
+      if (existing && existing !== target) {
+        throw new Error(
+          `Conflicting proper-noun mapping for ${source}: ` +
+            `${existing}, ${target}`,
+        );
+      }
+      mappings.set(source, target);
+    }
+  }
+  return mappings;
+}
+
+function readTraditionalToSimplifiedProperNounMap() {
+  return buildTraditionalToSimplifiedProperNounMap(
+    JSON.parse(fs.readFileSync(properNounsPath, "utf8")),
+  );
+}
+
 function readPlayerStudents() {
   const students = yaml.load(fs.readFileSync(playerStudentsYamlPath, "utf8"));
   if (!Array.isArray(students)) {
@@ -243,6 +278,9 @@ export async function loadTraditionalToSimplifiedCharacterNameMap() {
       );
       for (const [source, target] of buildPlayerFamilyNameMap(students)) {
         if (!mappings.has(source)) mappings.set(source, target);
+      }
+      for (const [source, target] of readTraditionalToSimplifiedProperNounMap()) {
+        mappings.set(source, target);
       }
       return mappings;
     });

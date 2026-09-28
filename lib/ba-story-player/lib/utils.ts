@@ -9,6 +9,7 @@ import { Spine } from "@esotericsoftware/spine-pixi-v7";
 // }
 
 let dataUrl = "";
+let localResourceUrl = "";
 let otherSoundMap: OtherSoundsUrls;
 /**
  * ogg类型的音频是否用其他音频类型代替
@@ -187,6 +188,21 @@ export function setDataUrl(url: string): void {
     bg_underfire: `${dataUrl}/Audio/Sound/UI_FX_BG_UnderFire.wav`,
     back: `${dataUrl}/Audio/Sound/UI_Button_Back.wav`,
   };
+}
+
+/**
+ * Set the application-owned static resource root. These resources are shipped
+ * with the Viewer instead of fetched from the external game-resource CDN.
+ */
+export function setLocalResourceUrl(url = ""): void {
+  localResourceUrl = url.replace(/\/$/, "");
+}
+
+export function getLocalResourceUrl(path: string): string {
+  if (!localResourceUrl) {
+    return "";
+  }
+  return `${localResourceUrl}/${path.replace(/^\//, "")}`;
 }
 
 /**

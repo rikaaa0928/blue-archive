@@ -554,9 +554,10 @@ export async function init(
   privateState = initPrivateState();
   /*  */
   utils.setDataUrl(props.dataUrl);
+  utils.setLocalResourceUrl(props.localResourceUrl);
   privateState.dataUrl = props.dataUrl;
   privateState.language = props.language;
-  privateState.userName = props.userName;
+  privateState.userName = props.userName || "エロマンガ";
   privateState.storySummary = props.storySummary;
   //加入判断防止vite热更新重新创建app导致加载资源错误
   if (!privateState.app) {
@@ -627,6 +628,7 @@ export const resourcesLoader = {
   audioUrls: new Set<string>(),
   popupImageResolutionTasks: new Map<string, Promise<string>>(),
   characterSpineResolutionTasks: new Map<string, Promise<string>>(),
+  l2dSpineResolutionTasks: new Map<string, Promise<string>>(),
   /**
    * 初始化, 预先加载表资源供翻译层使用
    */
@@ -678,8 +680,7 @@ export const resourcesLoader = {
 
       //添加l2d spine资源
       if (unit.l2d) {
-        const l2dUrl = unit.l2d.spineUrl;
-        checkloadAssetAlias(l2dUrl, l2dUrl);
+        this.checkAndAddL2dSpine(unit);
         playerStore.curL2dConfig?.otherSpine?.forEach(i =>
           this.checkAndAdd(utils.getResourcesUrl("otherL2dSpine", i))
         );
@@ -720,6 +721,7 @@ export const resourcesLoader = {
         this.audioUrls.clear();
         this.popupImageResolutionTasks.clear();
         this.characterSpineResolutionTasks.clear();
+        this.l2dSpineResolutionTasks.clear();
         hasLoad = true;
         callback();
       }
@@ -730,6 +732,7 @@ export const resourcesLoader = {
       this.audioUrls.clear();
       this.popupImageResolutionTasks.clear();
       this.characterSpineResolutionTasks.clear();
+      this.l2dSpineResolutionTasks.clear();
       errorCallback(
         error instanceof Error ? error : new Error(String(error))
       );
@@ -813,6 +816,86 @@ export const resourcesLoader = {
     this.loadTaskList.push(
       resolutionTask.then(resolvedUrl => {
         character.spineUrl = resolvedUrl;
+      })
+    );
+  },
+
+  /**
+   * Keep the shared game-resource CDN as the primary L2D source. If a known
+   * story background is missing there, retry with the Viewer-owned copy that
+   * is served by the local Vite server or Cloudflare Pages deployment.
+   */
+  checkAndAddL2dSpine(unit: StoryUnit) {
+    if (!unit.l2d) {
+      return;
+    }
+
+    const primaryUrl = unit.l2d.spineUrl;
+    const fallbackUrl = unit.l2d.fallbackSpineUrl;
+    let resolutionTask = this.l2dSpineResolutionTasks.get(primaryUrl);
+    if (!resolutionTask) {
+      resolutionTask = (async () => {
+        let primaryFailure: unknown;
+        try {
+          await loadAssetAlias(primaryUrl, primaryUrl, false);
+          return primaryUrl;
+        } catch (error) {
+          primaryFailure = error;
+        }
+
+        const sharedFallbackUrl = utils.getCharacterSpineFallbackUrl(primaryUrl);
+        if (sharedFallbackUrl) {
+          console.warn(
+            `[L2D Spine fallback] ${primaryUrl} failed; trying shared fallback ${sharedFallbackUrl}`
+          );
+          try {
+            await loadAssetAlias(sharedFallbackUrl, sharedFallbackUrl, false);
+            console.info(`[L2D Spine fallback] resolved ${sharedFallbackUrl}`);
+            return sharedFallbackUrl;
+          } catch (error) {
+            primaryFailure = error;
+          }
+        }
+
+        if (!fallbackUrl) {
+          console.error(
+            `[L2D Spine fallback] no local fallback for ${primaryUrl}`,
+            primaryFailure
+          );
+          throw primaryFailure;
+        }
+
+        console.warn(
+          `[L2D Spine fallback] shared sources failed; trying local ${fallbackUrl}`
+        );
+        try {
+          await loadAssetAlias(fallbackUrl, fallbackUrl, false);
+        } catch (fallbackFailure) {
+          console.error(
+            `[L2D Spine fallback] all candidates failed; local fallback was ${fallbackUrl}`,
+            primaryFailure,
+            fallbackFailure
+          );
+          eventBus.emit("oneResourceLoaded", {
+            type: "fail",
+            resourceName: fallbackUrl.substring(fallbackUrl.lastIndexOf("/") + 1),
+          });
+          throw fallbackFailure;
+        }
+        console.info(`[L2D Spine fallback] resolved ${fallbackUrl}`);
+        return fallbackUrl;
+      })();
+      this.l2dSpineResolutionTasks.set(primaryUrl, resolutionTask);
+    }
+
+    this.loadTaskList.push(
+      resolutionTask.then(resolvedUrl => {
+        if (unit.l2d) {
+          unit.l2d.spineUrl = resolvedUrl;
+        }
+        if (playerStore.l2dSpineUrl === primaryUrl) {
+          playerStore.setL2DSpineUrl(resolvedUrl);
+        }
       })
     );
   },

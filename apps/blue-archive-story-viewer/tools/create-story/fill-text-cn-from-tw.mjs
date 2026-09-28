@@ -234,13 +234,20 @@ export function normalizeTextCnCharacterNames(
       traditional,
     );
     const token = `${tokenPrefix}${protectedNames.length}\uE001`;
-    let replaced = false;
+    let protectedCanonical = false;
+    if (normalized.includes(simplified)) {
+      normalized = normalized.split(simplified).join(token);
+      protectedCanonical = true;
+    }
+    let replacedSource = false;
     for (const source of new Set([traditional, convertedTraditional])) {
       if (!source || !normalized.includes(source)) continue;
       normalized = normalized.split(source).join(token);
-      replaced = true;
+      replacedSource = true;
     }
-    if (replaced) protectedNames.push({ token, simplified });
+    if (protectedCanonical || replacedSource) {
+      protectedNames.push({ token, simplified });
+    }
   }
   for (const { token, simplified } of protectedNames) {
     normalized = normalized.split(token).join(simplified);
@@ -360,8 +367,8 @@ async function main() {
   console.log(`Filled from TextTw: ${stats.filled}`);
   console.log(`Refreshed existing TextCn: ${stats.refreshedExisting}`);
   console.log(
-    `Mapped character names: ${stats.mappedNameOccurrences} occurrences ` +
-    `across ${stats.mappedNames} names`,
+    `Mapped proper nouns: ${stats.mappedNameOccurrences} occurrences ` +
+    `across ${stats.mappedNames} terms`,
   );
   console.log(
     "Still missing on display-text rows: " +

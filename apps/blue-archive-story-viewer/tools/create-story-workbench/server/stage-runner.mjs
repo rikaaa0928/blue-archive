@@ -21,10 +21,10 @@ import {
 import { proofreadStoryTextCnWithLlm } from "../../create-story/proofread-text-cn-with-llm.mjs";
 import {
   inferScenarioRole,
-  isCollectiveScenarioSpeaker,
   isUnknownScenarioSpeaker,
   parseScenarioScriptSpeakers,
   replaceScenarioDialogueSpeaker,
+  shouldReviewAsCollectiveScenarioSpeaker,
 } from "../../create-story/scenario-script-speakers.mjs";
 import { resolveRecordOutputPath } from "../../../scripts/record-story/record-output-path.mjs";
 import {
@@ -273,11 +273,25 @@ function productionVoiceIndices(story) {
 }
 
 export function productionTtsIndices(production, story) {
+  const regenerateSpeakers = new Set(production.voice.references?.regenerateSpeakers ?? []);
+  const preserved = new Set(production.base.baseline?.preservedVoiceIndices ?? []);
   const excluded = new Set([
-    ...(production.base.baseline?.preservedVoiceIndices ?? []),
     ...(production.voice.script.effectiveSkippedIndices ?? []),
   ]);
-  return productionVoiceIndices(story).filter(index => !excluded.has(index));
+  return productionVoiceIndices(story).filter(index => {
+    if (excluded.has(index)) return false;
+    if (!preserved.has(index)) return true;
+    const sourceSpeaker = parseScenarioScriptSpeakers(story.content[index]).dialogueSpeaker;
+    if (regenerateSpeakers.has(sourceSpeaker)) return true;
+    return (production.voice.speakers?.items ?? []).some(item => {
+      if (!item.storyIndices?.includes(index)) return false;
+      if (item.resolution?.type === "character") return regenerateSpeakers.has(item.resolution.stableKey);
+      if (item.resolution?.type === "collective") {
+        return item.resolution.members?.some(member => regenerateSpeakers.has(member));
+      }
+      return false;
+    });
+  });
 }
 
 async function cnNormalize(workspace) {
@@ -529,8 +543,17 @@ async function productionSpeakerScan(workspace) {
     if (!new Set(["dialogue", "narration"]).has(inferScenarioRole(unit))) return;
     const { dialogueSpeaker } = parseScenarioScriptSpeakers(unit);
     if (!dialogueSpeaker) return;
+    const catalog = availabilityByKey.get(dialogueSpeaker) ?? {
+      stableKey: dialogueSpeaker,
+      characterName: "",
+      available: false,
+      reason: "player-character-unresolved",
+    };
     const exceptional = isUnknownScenarioSpeaker(dialogueSpeaker) ||
-      isCollectiveScenarioSpeaker(dialogueSpeaker);
+      shouldReviewAsCollectiveScenarioSpeaker(
+        dialogueSpeaker,
+        catalog.characterName,
+      );
     if (exceptional) {
       items.push({
         stableKey: `line:${storyIndex}`,
@@ -549,12 +572,6 @@ async function productionSpeakerScan(workspace) {
     }
     if (known.has(dialogueSpeaker)) return;
     known.add(dialogueSpeaker);
-    const catalog = availabilityByKey.get(dialogueSpeaker) ?? {
-      stableKey: dialogueSpeaker,
-      characterName: "",
-      available: false,
-      reason: "player-character-unresolved",
-    };
     items.push({
       ...catalog,
       sourceSpeaker: dialogueSpeaker,
@@ -693,7 +710,10 @@ function runProductionTts(workspace, stage, params = {}) {
   if (production.voice.script.effectiveSkippedIndices.length) {
     args.push("--skip-indices", production.voice.script.effectiveSkippedIndices.join(","));
   }
-  const availableIndices = productionTtsIndices(production, story);
+  const availableIndices = stage === "prepare"
+    ? productionVoiceIndices(story).filter(index =>
+      !production.voice.script.effectiveSkippedIndices.includes(index))
+    : productionTtsIndices(production, story);
   const requestedIndices = Array.isArray(params.indices) && params.indices.length
     ? params.indices.map(Number).filter(index => availableIndices.includes(index))
     : availableIndices;
@@ -708,7 +728,7 @@ function runProductionTts(workspace, stage, params = {}) {
 function productionReferencePrepare(workspace) {
   const before = prepareProductionVoiceInput(workspace, { requireScript: false }).production;
   const story = productionInputStory(workspace.id, { includeCn: true, includeScript: true });
-  if (!productionTtsIndices(before, story).length) {
+  if (!productionVoiceIndices(story).length) {
     writeReferenceArtifact(workspace.id, {}, {
       note: "现有剧情语音完整，无需准备参考音",
       source: "existing-viewer-baseline",

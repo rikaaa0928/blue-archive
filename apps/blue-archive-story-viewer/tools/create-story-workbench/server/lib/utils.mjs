@@ -3,6 +3,8 @@ import fs from "node:fs";
 import path from "node:path";
 import url from "node:url";
 
+import { effectiveStoryTtsText } from "../../../create-story/shared-config.mjs";
+
 const currentDir = path.dirname(url.fileURLToPath(import.meta.url));
 
 export const workbenchRoot = path.resolve(currentDir, "..", "..");
@@ -166,10 +168,7 @@ export function loadEnvFiles() {
 }
 
 export function effectiveTtsText(unit) {
-  if (unit?.TextJpVoice !== undefined && unit?.TextJpVoice !== null) {
-    return String(unit.TextJpVoice).trim();
-  }
-  return String(unit?.TextJp || "").trim();
+  return effectiveStoryTtsText(unit);
 }
 
 export function isPunctuationOnlyTtsText(value) {

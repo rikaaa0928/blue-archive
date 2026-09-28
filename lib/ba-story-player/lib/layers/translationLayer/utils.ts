@@ -1,5 +1,10 @@
 import { usePlayerStore } from "@/stores";
-import { deepCopyObject, getResourcesUrl } from "@/utils";
+import {
+  deepCopyObject,
+  getLocalResourceUrl,
+  getResourcesUrl,
+} from "@/utils";
+import { resolveLocalL2dSpineFallback } from "./localL2dResources";
 import xxhash from "xxhashjs";
 import {
   Character,
@@ -292,7 +297,15 @@ export function getL2DUrlAndName(BGFileName: string) {
     .pop()
     ?.replace("SpineBG_Lobby", "");
   filename = `${filename}_home`;
-  return { url: getResourcesUrl("l2dSpine", filename), name: filename };
+  const localFallback = resolveLocalL2dSpineFallback(
+    BGFileName,
+    getLocalResourceUrl("")
+  );
+  return {
+    url: getResourcesUrl("l2dSpine", filename),
+    fallbackUrl: localFallback?.url,
+    name: filename,
+  };
 }
 
 export function getSoundUrl(Sound: string) {
@@ -439,8 +452,10 @@ const IterateStoryUnitFun: IterateStoryUnit = {
   PopupFileName: null,
   SelectionGroup: null,
   audio(prv?: PlayAudio, cur?: PlayAudio) {
+    const stopBgm = cur?.stopBgm === true;
     return {
-      bgm: cur?.bgm ?? prv?.bgm,
+      stopBgm,
+      bgm: stopBgm ? undefined : cur?.bgm ?? prv?.bgm,
       soundUrl: cur?.soundUrl ?? "",
       voiceJPUrl: cur?.voiceJPUrl ?? "",
     };

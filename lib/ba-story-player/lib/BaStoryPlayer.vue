@@ -37,10 +37,11 @@ import { initPrivateState, usePlayerStore } from "./stores";
 export type PlayerProps = {
   story: TranslatedStoryUnit;
   dataUrl: string;
+  localResourceUrl?: string;
   width: number;
   height: number;
   language: Language;
-  userName: string;
+  userName?: string;
   storySummary: StorySummary;
   startFullScreen?: boolean;
   recordMode?: boolean;
@@ -66,11 +67,12 @@ const props = withDefaults(defineProps<PlayerProps>(), {
   muted: false,
   deferPlayback: false,
   useMp3: false,
+  userName: "エロマンガ",
 });
 const storySummary = ref(props.storySummary);
 storySummary.value.summary = storySummary.value.summary.replaceAll(
   "[USERNAME]",
-  props.userName
+  props.userName || "エロマンガ"
 );
 const emit = defineEmits(["end", "error", "initiated"]);
 

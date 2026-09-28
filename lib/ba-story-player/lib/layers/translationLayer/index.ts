@@ -126,6 +126,22 @@ const StoryRawUnitParserUnit: IStoryRawUnitParserUnit = {
       return unit;
     },
   },
+  battle: {
+    reg: /#battle;(\d+);?/i,
+    fn(match: RegExpExecArray, unit: StoryUnit) {
+      unit.type = "effectOnly";
+      if (unit.audio) unit.audio.stopBgm = true;
+      unit.effect.otherEffect.push({ type: "battle", args: Number(match[1]) });
+      return unit;
+    },
+  },
+  battleEnd: {
+    reg: /#battleend;?/i,
+    fn(match: RegExpExecArray, unit: StoryUnit) {
+      unit.effect.otherEffect.push({ type: "battleEnd" });
+      return unit;
+    },
+  },
   fontsize: {
     reg: /#fontsize;(\d+);?/i,
     fn(match: RegExpExecArray, unit: StoryUnit) {
@@ -409,6 +425,7 @@ export function translate(rawStory: TranslatedStoryUnit): StoryUnit[] {
           );
           unit.l2d = {
             spineUrl: l2dInfo.url,
+            fallbackSpineUrl: l2dInfo.fallbackUrl,
             animationName: BGItem.AnimationName,
           };
         }

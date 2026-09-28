@@ -174,6 +174,11 @@ export function soundInit() {
    * @param playAudioInfo
    */
   function playAudio(playAudioInfo: PlayAudio) {
+    if (playAudioInfo.stopBgm && bgm) {
+      bgm.stop();
+      bgm.off("end");
+      bgm = undefined;
+    }
     if (playAudioInfo.bgm) {
       // 如果有正在播放的BGM则停止当前播放, 替换为下一个BGM
       const cfg = playAudioInfo.bgm;

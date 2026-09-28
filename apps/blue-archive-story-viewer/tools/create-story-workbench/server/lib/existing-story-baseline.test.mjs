@@ -59,3 +59,32 @@ test("does not adopt a baseline with a different row count", () => {
   assert.equal(summary.compatible, false);
   assert.equal(adopted.content[0].TextCn, "");
 });
+
+test("inherits an existing processed story across an inserted battle transition frame", () => {
+  const existing = story();
+  existing.content[0].TextCn = "台词";
+  existing.content[0].TextJpVoice = "[calm]台詞";
+  existing.content[1].TextCn = "既有";
+  existing.content[1].VoiceJp = "Main_31010_001";
+
+  const imported = story();
+  imported.content.splice(1, 0, {
+    GroupId: 31010,
+    SelectionGroup: 0,
+    Sound: "SE_MGShot_02",
+    ScriptKr: "#all;hide\n#hidemenu\n#battle;2500",
+    TextJp: "",
+  });
+  imported.content[2].ScriptKr = `#battleend\n${imported.content[2].ScriptKr}`;
+
+  const { story: adopted, summary } = adoptExistingStoryBaseline(imported, existing);
+  assert.equal(summary.compatible, true);
+  assert.equal(summary.syntheticRows, 1);
+  assert.equal(summary.matchedRows, 2);
+  assert.deepEqual(summary.unmatchedIndices, []);
+  assert.equal(adopted.content[0].TextCn, "台词");
+  assert.equal(adopted.content[1].Sound, "SE_MGShot_02");
+  assert.equal(adopted.content[1].TextCn, undefined);
+  assert.equal(adopted.content[2].TextCn, "既有");
+  assert.equal(adopted.content[2].VoiceJp, "Main_31010_001");
+});

@@ -24,7 +24,7 @@ function activeLoseFocus(event: Event) {
 function updateUsername(event: Event) {
   const target = event.target as HTMLInputElement;
   const value = target.innerText ?? "";
-  const result = "" === value ? "Sensei" : value;
+  const result = "" === value ? "エロマンガ" : value;
   settingsStore.setUsername(result.replaceAll(/\s/g, "").slice(0, 10));
 }
 </script>

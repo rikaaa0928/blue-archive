@@ -865,49 +865,67 @@ export function recordSpeakerScan(identityOrId, items, metadata = {}) {
   return getProduction(identityOrId, { includeStory: false });
 }
 
-export function updateSpeakerResolution(identityOrId, stableKey, resolution, note = "") {
-  const paths = ensureProduction(identityOrId);
-  const current = readJson(paths.speakers);
-  const index = current.items.findIndex(item => item.stableKey === stableKey);
-  if (index < 0) throw new Error(`Unknown speaker key: ${stableKey}`);
-  const item = current.items[index];
+function normalizeSpeakerResolution(item, resolution) {
   const type = String(resolution?.type ?? "");
-  let normalizedResolution;
   if (type === "npc") {
-    normalizedResolution = { type: "npc", preset: "anonymous-npc-v4" };
-  } else if (item.reason === "collective-speaker") {
+    return { type: "npc", preset: "anonymous-npc-v4" };
+  }
+  if (item.reason === "collective-speaker" && type === "collective") {
     const members = normalizeCollectiveMemberKeys(resolution?.members);
-    if (type !== "collective" || members.length < 2) {
+    if (members.length < 2) {
       throw new Error("A collective speaker requires at least two stable Korean member keys");
     }
-    normalizedResolution = { type, members };
-  } else if (type === "character") {
+    return { type, members };
+  }
+  if (type === "character") {
     const resolvedKey = String(resolution?.stableKey ?? "").trim();
     const characterName = String(resolution?.characterName ?? "").trim();
     if (!resolvedKey || !characterName) {
       throw new Error("A character resolution requires both the Korean stable key and Chinese name");
     }
-    normalizedResolution = { type, stableKey: resolvedKey, characterName };
-  } else {
-    throw new Error("Speaker resolution must be character, npc, or collective");
+    return { type, stableKey: resolvedKey, characterName };
   }
-  const before = item.resolution ?? null;
+  throw new Error("Speaker resolution must be character, npc, or collective");
+}
+
+export function updateSpeakerResolutions(identityOrId, stableKeys, resolution, note = "") {
+  const paths = ensureProduction(identityOrId);
+  const current = readJson(paths.speakers);
+  const keys = [...new Set((stableKeys ?? []).map(value => String(value).trim()).filter(Boolean))];
+  if (!keys.length) throw new Error("Select at least one speaker to update");
+  const changes = keys.map(stableKey => {
+    const index = current.items.findIndex(item => item.stableKey === stableKey);
+    if (index < 0) throw new Error(`Unknown speaker key: ${stableKey}`);
+    const item = current.items[index];
+    return {
+      stableKey,
+      index,
+      before: item.resolution ?? null,
+      after: normalizeSpeakerResolution(item, resolution),
+    };
+  });
   const items = structuredClone(current.items);
-  items[index].resolution = normalizedResolution;
-  items[index].resolvedAt = nowIso();
+  const editedAt = nowIso();
+  for (const change of changes) {
+    items[change.index].resolution = change.after;
+    items[change.index].resolvedAt = editedAt;
+  }
   const digest = jsonDigest(items);
   appendRecord(paths.speakerEdits, "edit-", {
     schemaVersion,
-    editedAt: nowIso(),
-    stableKey,
-    before,
-    after: normalizedResolution,
+    editedAt,
+    stableKeys: keys,
+    changes: changes.map(({ stableKey, before, after }) => ({ stableKey, before, after })),
     note: String(note ?? "").trim(),
     beforeDigest: current.digest,
     afterDigest: digest,
   });
-  writeJsonAtomic(paths.speakers, { ...current, items, digest, updatedAt: nowIso() });
+  writeJsonAtomic(paths.speakers, { ...current, items, digest, updatedAt: editedAt });
   return getProduction(identityOrId, { includeStory: false });
+}
+
+export function updateSpeakerResolution(identityOrId, stableKey, resolution, note = "") {
+  return updateSpeakerResolutions(identityOrId, [stableKey], resolution, note);
 }
 
 export function writeReferenceArtifact(identityOrId, selections, metadata = {}) {
@@ -916,7 +934,18 @@ export function writeReferenceArtifact(identityOrId, selections, metadata = {}) 
   const normalized = Object.fromEntries(Object.entries(selections ?? {})
     .map(([speaker, clips]) => [speaker, [...new Set((clips ?? []).map(String))].sort()])
     .sort(([left], [right]) => left.localeCompare(right)));
-  const digest = jsonDigest(normalized);
+  const regenerateSpeakers = new Set(current.regenerateSpeakers ?? []);
+  if (metadata.source === "human-fine-tune") {
+    for (const speaker of new Set([...Object.keys(current.selections ?? {}), ...Object.keys(normalized)])) {
+      if (jsonDigest(current.selections?.[speaker] ?? []) !== jsonDigest(normalized[speaker] ?? [])) {
+        regenerateSpeakers.add(speaker);
+      }
+    }
+  }
+  const affectedSpeakers = [...regenerateSpeakers].sort();
+  const digest = affectedSpeakers.length
+    ? jsonDigest({ selections: normalized, regenerateSpeakers: affectedSpeakers })
+    : jsonDigest(normalized);
   const preparedAt = nowIso();
   if (current.digest !== digest) {
     appendRecord(paths.referenceEdits, "edit-", {
@@ -932,6 +961,7 @@ export function writeReferenceArtifact(identityOrId, selections, metadata = {}) 
   writeJsonAtomic(paths.references, {
     schemaVersion,
     selections: normalized,
+    regenerateSpeakers: affectedSpeakers,
     preparedAt,
     digest,
     ...metadata,

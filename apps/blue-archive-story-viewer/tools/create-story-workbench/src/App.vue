@@ -127,6 +127,7 @@
         </section>
 
         <ProductionWorkbench
+          :key="`${selectedId}:${status.workspace.activeVersionId}`"
           :workspace-id="selectedId"
           :section="selectedStage"
           :latest-job="latestJob"
@@ -145,6 +146,7 @@
         :initial-query="batchInitialQuery"
         @close="showSeriesBatch = false"
         @open-workspace="openBatchWorkspace"
+        @changed="handleSeriesChanged"
       />
       <VersionManager
         v-if="showVersions && status"
@@ -432,6 +434,10 @@ async function openBatchWorkspace({ id, stage }) {
   await refresh();
   selectedStage.value = stage;
 }
+async function handleSeriesChanged({ storyIds }) {
+  message.value = `已为 ${storyIds.length} 个章节准备新版本，可以一键完成。`;
+  await loadWorkspaces();
+}
 async function openCoverWorkspace({ id, stage }) {
   selectedId.value = id;
   localStorage.setItem("story-workbench-id", id);
@@ -504,7 +510,10 @@ function stageStatus(id) {
   if (id === "production-final") return productionSummary.value.preview.complete ? "completed" : "ready";
   return "ready";
 }
-function confirmText(action, params) { return `即将执行 ${action}${params.ttsStage ? ` (${params.ttsStage})` : ""}。该操作可能访问远端、产生费用或写入正式目录。确认继续？`; }
+function confirmText(action, params) {
+  if (action === "production-tts") return "将为改动角色删除同名旧参考音、创建新参考音，并增量生成和上传语音；可能产生费用。确认继续？";
+  return `即将执行 ${action}${params.ttsStage ? ` (${params.ttsStage})` : ""}。该操作可能访问远端、产生费用或写入正式目录。确认继续？`;
+}
 
 onMounted(async () => {
   await loadWorkspaces();

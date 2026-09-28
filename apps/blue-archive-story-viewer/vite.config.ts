@@ -15,9 +15,12 @@ import timezone from "dayjs/plugin/timezone.js";
 import utc from "dayjs/plugin/utc.js";
 import vueDevTools from "vite-plugin-vue-devtools";
 import UnoCSS from "unocss/vite";
+import { ensureLocalSpineResources } from "./tools/ensure-local-spine-resources.mjs";
 
 dayjs.extend(utc);
 dayjs.extend(timezone);
+
+await ensureLocalSpineResources();
 
 const version = {
   build: dayjs().tz("Asia/Shanghai").format("YYYYMMDDHHmmss"),

@@ -7,11 +7,19 @@ import {
 
 const inheritedFields = ["TextCn", "TextJpVoice", "VoiceJp"];
 
+function isBattleTransitionRow(unit) {
+  return /(?:^|\n)#battle;\d+;?(?:\n|$)/iu.test(String(unit?.ScriptKr ?? ""));
+}
+
+function baselineScript(unit) {
+  return String(unit?.ScriptKr ?? "").replace(/^#battleend;?\n?/iu, "");
+}
+
 function rowIdentity(story, unit) {
   return JSON.stringify([
     Number(unit?.GroupId ?? story?.GroupId ?? 0),
     Number(unit?.SelectionGroup ?? 0),
-    String(unit?.ScriptKr ?? ""),
+    baselineScript(unit),
   ]);
 }
 
@@ -28,19 +36,27 @@ export function adoptExistingStoryBaseline(importedStory, existingStory) {
   const story = structuredClone(importedStory);
   const importedRows = Array.isArray(story?.content) ? story.content : [];
   const existingRows = Array.isArray(existingStory?.content) ? existingStory.content : [];
+  const importedBaselineRows = importedRows
+    .map((unit, index) => ({ unit, index }))
+    .filter(({ unit }) => !isBattleTransitionRow(unit));
+  const existingBaselineRows = existingRows
+    .map((unit, index) => ({ unit, index }))
+    .filter(({ unit }) => !isBattleTransitionRow(unit));
   const summary = {
     available: existingRows.length > 0,
-    compatible: existingRows.length > 0 && importedRows.length === existingRows.length,
+    compatible: existingRows.length > 0 &&
+      importedBaselineRows.length === existingBaselineRows.length,
     importedRows: importedRows.length,
     existingRows: existingRows.length,
+    syntheticRows: importedRows.length - importedBaselineRows.length,
     matchedRows: 0,
     unmatchedIndices: [],
     inherited: Object.fromEntries(inheritedFields.map(field => [field, 0])),
   };
   if (!summary.compatible) return { story, summary };
 
-  importedRows.forEach((unit, index) => {
-    const existing = existingRows[index];
+  importedBaselineRows.forEach(({ unit, index }, baselineIndex) => {
+    const existing = existingBaselineRows[baselineIndex].unit;
     if (rowIdentity(story, unit) !== rowIdentity(existingStory, existing)) {
       summary.unmatchedIndices.push(index);
       return;

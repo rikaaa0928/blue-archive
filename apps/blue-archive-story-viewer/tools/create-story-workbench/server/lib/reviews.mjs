@@ -4,9 +4,9 @@ import path from "node:path";
 import { getPlayerCharacterId } from "../../../create-story/ba-character-catalog.mjs";
 import {
   inferScenarioRole,
-  isCollectiveScenarioSpeaker,
   isUnknownScenarioSpeaker,
   parseScenarioScriptSpeakers,
+  shouldReviewAsCollectiveScenarioSpeaker,
 } from "../../../create-story/scenario-script-speakers.mjs";
 import {
   applyTtsSkipDecision,
@@ -202,7 +202,10 @@ function buildTool1Issues(
           .filter(speaker => voiceAvailabilityByKey.get(speaker)?.available === true)
           .map(stableKey => ({ stableKey, characterName: characterNameFor(stableKey) })),
       });
-    } else if (isCollectiveScenarioSpeaker(dialogueSpeaker)) {
+    } else if (shouldReviewAsCollectiveScenarioSpeaker(
+      dialogueSpeaker,
+      characterNameFor(dialogueSpeaker),
+    )) {
       issues.push({
         id: `collective:${index}:${dialogueSpeaker}`,
         kind: "collective-speaker",

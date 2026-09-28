@@ -122,7 +122,7 @@ const bgEffectImgTable: BGEffectImgTable = {
 // @ts-ignore
 let privateState: PrivateStates = {
   language: "Cn",
-  userName: "",
+  userName: "エロマンガ",
   dataUrl: "",
   app: null,
   l2dSpineUrl: "",
@@ -288,7 +288,7 @@ const actions: Actions = {
   dispose() {
     privateState = {
       language: "Cn",
-      userName: "",
+      userName: "エロマンガ",
       dataUrl: "",
       app: null,
       l2dSpineUrl: "",

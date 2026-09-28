@@ -34,7 +34,7 @@ export const stageDefinitions = [
   { id: "sync", title: "同步原始表", kind: "automatic", shared: true },
   { id: "locate", title: "确认 GroupId", kind: "automatic" },
   { id: "raw-import", title: "导入多语言原稿", kind: "automatic" },
-  { id: "cn-normalize", title: "繁转中与角色名规范", kind: "automatic" },
+  { id: "cn-normalize", title: "繁转中与专名规范", kind: "automatic" },
   { id: "cn-llm-1", title: "中文 LLM 校对 1", kind: "automatic", remote: true },
   { id: "cn-llm-2", title: "中文 LLM 校对 2", kind: "automatic", remote: true },
   { id: "voice-catalog", title: "查询角色语音可用性", kind: "automatic", remote: true },

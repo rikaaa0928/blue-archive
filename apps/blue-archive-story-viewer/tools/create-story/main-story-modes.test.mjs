@@ -17,6 +17,10 @@ const payload = [
     Open: true, Hide: false, FrontScenarioGroupId: [11000, 11001], BackScenarioGroupId: [],
   } },
   { Bytes: {
+    ModeId: 11000, ModeType: "Main", VolumeId: 0, ChapterId: 1, EpisodeId: 1,
+    Open: true, Hide: true, FrontScenarioGroupId: [11000], BackScenarioGroupId: [11001],
+  } },
+  { Bytes: {
     ModeId: 99999, ModeType: "Event", VolumeId: 0, ChapterId: 0, EpisodeId: 1,
     Open: true, Hide: false, FrontScenarioGroupId: [99999], BackScenarioGroupId: [],
   } },
@@ -26,7 +30,11 @@ test("maps main and prologue modes to canonical player stories", () => {
   const episodes = parseMainStoryEpisodes(payload);
   assert.deepEqual(episodes.map(item => item.storyId), ["11000", "11020"]);
   assert.deepEqual(episodes[0].groupIds, ["11000", "11001"]);
+  assert.deepEqual(episodes[0].frontGroupIds, ["11000"]);
+  assert.deepEqual(episodes[0].backGroupIds, ["11001"]);
   assert.deepEqual(episodes[1].groupIds, ["11020", "11025"]);
+  assert.deepEqual(episodes[1].frontGroupIds, ["11020"]);
+  assert.deepEqual(episodes[1].backGroupIds, ["11025"]);
   assert.equal(mainStorySeriesKey(episodes[0]), "prologue");
   assert.equal(mainStorySeriesKey(episodes[1]), "1:1");
 });

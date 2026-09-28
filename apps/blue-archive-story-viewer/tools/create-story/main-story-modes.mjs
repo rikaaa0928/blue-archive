@@ -18,21 +18,24 @@ function unique(values) {
   return [...new Set(values)];
 }
 
-function episodeFromRow(rawRow) {
+function episodeCandidateFromRow(rawRow) {
   const row = rawRow?.Bytes ?? rawRow;
   if (!row || !new Set(["Main", "Prologue"]).has(row.ModeType)) return null;
-  if (row.Hide === true || row.Open === false) return null;
+  if (row.Open === false) return null;
   const frontGroupIds = positiveIds(row.FrontScenarioGroupId);
   const backGroupIds = positiveIds(row.BackScenarioGroupId);
   if (!frontGroupIds.length) return null;
   const storyId = frontGroupIds[0];
   return {
     storyId: String(storyId),
+    hidden: row.Hide === true,
     modeId: Number(row.ModeId) || storyId,
     modeType: row.ModeType,
     volumeId: Number(row.VolumeId) || 0,
     chapterId: Number(row.ChapterId) || 0,
     episodeId: Number(row.EpisodeId) || 0,
+    frontGroupIds: unique(frontGroupIds).map(String),
+    backGroupIds: unique(backGroupIds).map(String),
     groupIds: unique([...frontGroupIds, ...backGroupIds]).map(String),
   };
 }
@@ -48,17 +51,45 @@ function compareEpisodes(left, right) {
 }
 
 export function parseMainStoryEpisodes(payload) {
+  const candidates = rowsFrom(payload)
+    .map(episodeCandidateFromRow)
+    .filter(Boolean);
   const byStoryId = new Map();
-  for (const rawRow of rowsFrom(payload)) {
-    const episode = episodeFromRow(rawRow);
-    if (!episode) continue;
+  for (const episode of candidates.filter(item => !item.hidden)) {
     const existing = byStoryId.get(episode.storyId);
     if (existing && JSON.stringify(existing.groupIds) !== JSON.stringify(episode.groupIds)) {
       throw new Error(`Conflicting ScenarioMode rows for main story ${episode.storyId}`);
     }
     byStoryId.set(episode.storyId, episode);
   }
-  return [...byStoryId.values()].sort(compareEpisodes);
+  const episodes = [...byStoryId.values()].map(episode => {
+    // The prologue has visible rows that flatten the before/after battle
+    // groups into FrontScenarioGroupId. Hidden legacy Main rows retain the
+    // real battle partition. Reuse only an exact group-set match so unrelated
+    // hidden content can never change the assembled episode.
+    const structuralMatches = candidates.filter(candidate =>
+      candidate.hidden &&
+      candidate.storyId === episode.storyId &&
+      candidate.backGroupIds.length > 0 &&
+      JSON.stringify(candidate.groupIds) === JSON.stringify(episode.groupIds),
+    );
+    const partitions = new Set(structuralMatches.map(candidate =>
+      JSON.stringify([candidate.frontGroupIds, candidate.backGroupIds]),
+    ));
+    if (partitions.size > 1) {
+      throw new Error(`Conflicting hidden battle partitions for main story ${episode.storyId}`);
+    }
+    const structural = structuralMatches[0];
+    const { hidden: _hidden, ...result } = episode;
+    return structural
+      ? {
+        ...result,
+        frontGroupIds: structural.frontGroupIds,
+        backGroupIds: structural.backGroupIds,
+      }
+      : result;
+  });
+  return episodes.sort(compareEpisodes);
 }
 
 export function findMainStoryEpisode(episodes, storyId) {

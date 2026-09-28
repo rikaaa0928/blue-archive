@@ -208,9 +208,11 @@ async function main() {
     }));
   });
 
-  const videoStartTime = Date.now();
-
   const page = await context.newPage();
+  // Playwright starts producing the video timeline once the first page is
+  // ready. Measuring before newPage() also counts page creation latency and
+  // shifts the separately captured audio later by roughly that duration.
+  const videoStartTime = Date.now();
   const isPopupFallbackAttempt = (message, location = '') => {
     if (message.startsWith('[popup fallback] both candidates failed:')) {
       return false;
@@ -233,7 +235,8 @@ async function main() {
       }
     } else if (
       text.startsWith('[popup fallback]') ||
-      text.startsWith('[character Spine fallback]')
+      text.startsWith('[character Spine fallback]') ||
+      text.startsWith('[L2D Spine fallback]')
     ) {
       console.log(`[browser console:${type}] ${text}`);
     }
@@ -504,7 +507,10 @@ async function main() {
     (playStartTime - videoStartTime) / 1000.0;
   const dialogVideoTimeSeconds = playbackVideoTimeSeconds +
     (browserSync.dialogMarkerPerf - browserSync.playbackPerf) / 1000.0;
-  const mediaRecorderCodecDelaySeconds = 0.5;
+  // The in-band marker is already measured on the decoded MediaRecorder
+  // timeline, so its timestamp includes any container/codec delay. Adding a
+  // second fixed codec allowance would make the final audio late.
+  const mediaRecorderCodecDelaySeconds = 0;
   const audioTimelineOffsetSeconds = Math.max(
     0,
     dialogVideoTimeSeconds - captureMarkerSeconds + mediaRecorderCodecDelaySeconds,

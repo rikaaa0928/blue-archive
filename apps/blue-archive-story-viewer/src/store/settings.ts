@@ -15,7 +15,7 @@ export const useSettingsStore = defineStore({
         lang: "cn" as Language,
         enableCheckForUpdates: true,
         theme: "light" as "light" | "dark",
-        username: "Sensei" as string,
+        username: "エロマンガ" as string,
         useMp3: false,
         useSuperSampling: "" as "" | "2" | "4" | boolean,
         initWithFullscreen: false,

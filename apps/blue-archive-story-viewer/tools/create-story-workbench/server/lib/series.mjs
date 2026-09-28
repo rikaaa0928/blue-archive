@@ -112,6 +112,7 @@ export function resolveEventSeries(query) {
       order: index + 1,
       storyId: String(storyId),
       directoryId: String(storyId).slice(0, 5),
+      workspaceExists: Boolean(workspace),
       title: {
         ...sourceTitle,
         fallback: `第 ${index + 1} 话`,
@@ -187,6 +188,10 @@ export function resolveMainSeries(query = "all", options = {}) {
             : `主线 ${storyId}`,
         },
         sourceGroupIds: episode?.groupIds ?? [storyId],
+        frontGroupIds: episode?.frontGroupIds ?? [storyId],
+        backGroupIds: episode?.backGroupIds ?? [],
+        isBattleMerged: Boolean(episode?.backGroupIds?.length),
+        workspaceExists: Boolean(workspace),
         imported: publicStoryIds.includes(storyId),
         progress: workspace
           ? workspaceProgress(workspace)

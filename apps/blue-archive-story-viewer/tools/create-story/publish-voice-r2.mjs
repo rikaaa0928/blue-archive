@@ -2,7 +2,10 @@ import fs from "fs";
 import crypto from "crypto";
 import path from "path";
 import url from "url";
-import { manifestProvesCurrentAudioPublished } from "./r2-publication-state.mjs";
+import {
+  manifestProvesCurrentAudioPublished,
+  publicationTextMatchesTask,
+} from "./r2-publication-state.mjs";
 
 const __dirname = path.dirname(url.fileURLToPath(import.meta.url));
 const appRoot = path.resolve(__dirname, "..", "..");
@@ -293,13 +296,7 @@ function collectVoiceItems(story, args, manifest) {
     if (args.missingOnly && currentVoiceJp.trim()) {
       continue;
     }
-    const currentVoiceText = String(
-      story.content[task.index].TextJpVoice || "",
-    ).trim();
-    const generatedText = String(
-      task.generatedText ?? task.text ?? "",
-    ).trim();
-    if (!currentVoiceText || generatedText !== currentVoiceText) {
+    if (!publicationTextMatchesTask(story.content[task.index], task)) {
       continue;
     }
 

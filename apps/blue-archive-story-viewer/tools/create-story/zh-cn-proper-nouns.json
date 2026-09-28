@@ -1,0 +1,116 @@
+{
+  "schemaVersion": 1,
+  "sources": {
+    "official-cn": {
+      "name": "Blue Archive CN official website",
+      "url": "https://bluearchive-cn.com/official"
+    },
+    "translator-cheatsheet": {
+      "name": "ba-archive translator cheatsheet",
+      "url": "https://github.com/ba-archive/translator-cheatsheet/blob/master/public/dictionary.json",
+      "revision": "c1794d6f88e6f6cfcadba656677d7f48ee121a75"
+    },
+    "viewer-community-data": {
+      "name": "ba-archive story viewer student catalog",
+      "url": "https://github.com/ba-archive/blue-archive/blob/main/apps/blue-archive-story-viewer/public/config/yaml/students.yaml"
+    }
+  },
+  "entries": [
+    {
+      "traditional": ["奇普托斯"],
+      "simplified": "基沃托斯",
+      "category": "world",
+      "source": "official-cn"
+    },
+    {
+      "traditional": ["格黑娜學園"],
+      "simplified": "格黑娜学园",
+      "category": "school",
+      "source": "translator-cheatsheet"
+    },
+    {
+      "traditional": ["三一綜合學園", "聖三一綜合學園"],
+      "simplified": "圣三一综合学园",
+      "category": "school",
+      "source": "translator-cheatsheet"
+    },
+    {
+      "traditional": ["千年科學學園"],
+      "simplified": "千年科技学院",
+      "category": "school",
+      "source": "translator-cheatsheet"
+    },
+    {
+      "traditional": ["阿拜多斯高中", "阿拜多斯高級中學", "阿拜多斯高等中學"],
+      "simplified": "阿比多斯高级中学",
+      "category": "school",
+      "source": "translator-cheatsheet"
+    },
+    {
+      "traditional": ["山海經高級中學"],
+      "simplified": "山海经高级中学",
+      "category": "school",
+      "source": "translator-cheatsheet"
+    },
+    {
+      "traditional": ["百鬼夜行聯合學園"],
+      "simplified": "百鬼夜行联合学院",
+      "category": "school",
+      "source": "translator-cheatsheet"
+    },
+    {
+      "traditional": ["赤冬聯邦學園"],
+      "simplified": "红冬联邦学园",
+      "category": "school",
+      "source": "translator-cheatsheet"
+    },
+    {
+      "traditional": ["女武神警察學園"],
+      "simplified": "瓦尔基里警察学校",
+      "category": "school",
+      "source": "translator-cheatsheet"
+    },
+    {
+      "traditional": ["SRT特殊學園"],
+      "simplified": "SRT特殊学园",
+      "category": "school",
+      "source": "translator-cheatsheet"
+    },
+    {
+      "traditional": ["奧利斯分校"],
+      "simplified": "阿里乌斯分校",
+      "category": "school",
+      "source": "translator-cheatsheet"
+    },
+    {
+      "traditional": ["克洛盧斯學園", "克洛諾斯學園"],
+      "simplified": "克洛诺斯学院",
+      "category": "school",
+      "source": "translator-cheatsheet"
+    },
+    {
+      "traditional": ["狂獵藝術學院", "狂野亨特藝術學園"],
+      "simplified": "狂猎艺术学院",
+      "category": "school",
+      "source": "translator-cheatsheet"
+    },
+    {
+      "traditional": ["高地人鐵道學園"],
+      "simplified": "海兰德铁道学园",
+      "category": "school",
+      "source": "viewer-community-data"
+    },
+    {
+      "traditional": ["柵川中學"],
+      "simplified": "栅川中学",
+      "category": "school",
+      "source": "translator-cheatsheet"
+    },
+    {
+      "traditional": ["常盤台中學"],
+      "simplified": "常盘台中学",
+      "category": "school",
+      "source": "translator-cheatsheet"
+    }
+  ]
+}
